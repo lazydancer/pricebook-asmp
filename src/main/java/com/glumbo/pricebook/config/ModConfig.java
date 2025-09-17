@@ -4,27 +4,24 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonParseException;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.client.MinecraftClient;
 
 import java.io.IOException;
 import java.io.Reader;
 import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 public final class ModConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final String CONFIG_FILE_NAME = "glumbo-pricebook.json";
-    private static final Duration DEFAULT_RETRY_BACKOFF = Duration.ofSeconds(5);
 
     public boolean trackShops = true;
-    public int ticksBetweenSends = 600;
     public String senderId = "";
     public String apiBaseUrl = "http://localhost:49876";
-    public int maxQueuedScans = 128;
-    public int reconnectBackoffSeconds = (int) DEFAULT_RETRY_BACKOFF.getSeconds();
 
     public static ModConfig load() {
         Path configDir = FabricLoader.getInstance().getConfigDir();
@@ -54,25 +51,20 @@ public final class ModConfig {
     }
 
     private static String generateSenderId() {
-        String user = System.getProperty("user.name", "player");
+        String user = Optional.ofNullable(MinecraftClient.getInstance())
+                .map(MinecraftClient::getSession)
+                .map(session -> session.getUsername())
+                .filter(name -> !name.isBlank())
+                .orElse("player");
         return user + "-" + UUID.randomUUID();
     }
 
     private void applyDefaults() {
-        if (ticksBetweenSends <= 0) {
-            ticksBetweenSends = 600;
-        }
-        if (maxQueuedScans <= 0) {
-            maxQueuedScans = 128;
-        }
         if (senderId == null || senderId.isBlank()) {
             senderId = generateSenderId();
         }
         if (apiBaseUrl == null || apiBaseUrl.isBlank()) {
             apiBaseUrl = "http://localhost:49876";
-        }
-        if (reconnectBackoffSeconds <= 0) {
-            reconnectBackoffSeconds = (int) DEFAULT_RETRY_BACKOFF.getSeconds();
         }
     }
 
@@ -85,10 +77,6 @@ public final class ModConfig {
         } catch (IOException ignored) {
             // Swallow config persistence issues to avoid breaking gameplay.
         }
-    }
-
-    public Duration reconnectBackoff() {
-        return Duration.ofSeconds(Math.max(1, reconnectBackoffSeconds));
     }
 
     public String apiBaseUrl() {

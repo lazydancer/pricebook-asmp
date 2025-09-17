@@ -1,6 +1,5 @@
 package com.glumbo.pricebook.mixin;
 
-import com.glumbo.pricebook.GlumboPricebook;
 import com.glumbo.pricebook.GlumboPricebookClient;
 import com.glumbo.pricebook.scanner.ShopScanner;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
@@ -8,8 +7,8 @@ import net.minecraft.client.world.ClientWorld;
 import net.minecraft.network.packet.s2c.play.ChunkDataS2CPacket;
 import net.minecraft.network.packet.s2c.play.GameJoinS2CPacket;
 import net.minecraft.network.packet.s2c.play.UnloadChunkS2CPacket;
-import net.minecraft.world.chunk.WorldChunk;
 import net.minecraft.util.math.ChunkPos;
+import net.minecraft.world.chunk.WorldChunk;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -31,7 +30,6 @@ public abstract class ClientPlayNetworkHandlerMixin {
         int chunkZ = packet.getChunkZ();
         WorldChunk chunk = world.getChunkManager().getWorldChunk(chunkX, chunkZ);
         if (chunk == null) {
-            GlumboPricebook.LOGGER.debug("Chunk {} {} not available after packet; skipping scan", chunkX, chunkZ);
             return;
         }
         scanner.scanChunk(world, chunk);
@@ -39,7 +37,6 @@ public abstract class ClientPlayNetworkHandlerMixin {
 
     @Inject(method = "onGameJoin", at = @At("TAIL"))
     private void glumbo$resetScanner(GameJoinS2CPacket packet, CallbackInfo ci) {
-        GlumboPricebookClient.flushPending();
         GlumboPricebookClient.resetForNewWorld();
         GlumboPricebookClient.bootstrapTransport();
     }
@@ -50,6 +47,6 @@ public abstract class ClientPlayNetworkHandlerMixin {
         if (scanner == null) {
             return;
         }
-        scanner.forgetChunk(new ChunkPos(packet.getX(), packet.getZ()));
+        scanner.forgetChunk(packet.pos());
     }
 }

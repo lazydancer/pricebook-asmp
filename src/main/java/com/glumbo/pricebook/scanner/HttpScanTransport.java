@@ -1,6 +1,5 @@
 package com.glumbo.pricebook.scanner;
 
-import com.glumbo.pricebook.GlumboPricebook;
 import com.glumbo.pricebook.config.ModConfig;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -18,91 +17,35 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.Queue;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class HttpScanTransport {
-    private static final int MAX_ATTEMPTS = 5;
-    private static final int PAGE_SIZE = 256;
-
-    private final ModConfig config;
     private final HttpClient httpClient;
     private final String baseUrl;
     private final URI scansEndpoint;
-
-    private final Queue<PendingScan> queue = new ConcurrentLinkedQueue<>();
     private final Set<ChunkCoordinate> serverKnownChunks = ConcurrentHashMap.newKeySet();
-    private final AtomicBoolean sending = new AtomicBoolean(false);
-
-    private volatile Instant nextAttempt = Instant.EPOCH;
 
     public HttpScanTransport(ModConfig config) {
-        this.config = Objects.requireNonNull(config, "config");
+        Objects.requireNonNull(config, "config");
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
                 .version(HttpClient.Version.HTTP_1_1)
                 .build();
-        this.baseUrl = normalizeBaseUrl(config.apiBaseUrl());
+        this.baseUrl = config.apiBaseUrl();
         this.scansEndpoint = URI.create(baseUrl + "/api/scans");
     }
 
-    public void submit(List<ShopScan> scans) {
-        scans.stream()
-                .map(scan -> {
-                    ChunkCoordinate coordinate = ChunkCoordinate.fromScan(scan);
-                    boolean empty = scan.shops().isEmpty();
-                    if (!empty) {
-                        serverKnownChunks.add(coordinate);
-                    }
-                    return new PendingScan(scan, 0, empty, coordinate);
-                })
-                .forEach(queue::offer);
-        processQueue();
-    }
-
-    public void onTransportTick() {
-        processQueue();
-    }
-
-    public void bootstrap() {
-        fetchChunksPage();
-    }
-
-    public void clear() {
-        queue.clear();
-        sending.set(false);
-        nextAttempt = Instant.EPOCH;
-        serverKnownChunks.clear();
-    }
-
-    public boolean shouldTransmitEmpty(String dimension, ChunkPos pos) {
-        return serverKnownChunks.contains(new ChunkCoordinate(dimension, pos.x, pos.z));
-    }
-
-    private void processQueue() {
-        if (Instant.now().isBefore(nextAttempt)) {
-            return;
+    public void sendScan(String senderId, String dimension, ChunkPos pos, List<ShopSignParser.ShopEntry> shops) {
+        ChunkCoordinate coordinate = new ChunkCoordinate(dimension, pos.x, pos.z);
+        boolean empty = shops.isEmpty();
+        if (!empty) {
+            serverKnownChunks.add(coordinate);
         }
 
-        if (!sending.compareAndSet(false, true)) {
-            return;
-        }
-
-        PendingScan pending = queue.poll();
-        if (pending == null) {
-            sending.set(false);
-            return;
-        }
-
-        sendAsync(pending);
-    }
-
-    private void sendAsync(PendingScan pending) {
-        ShopScan scan = pending.scan();
-        String payload = encodeScan(scan);
+        String scanId = UUID.randomUUID().toString();
+        String payload = encodePayload(senderId, scanId, dimension, pos, shops);
 
         HttpRequest request = HttpRequest.newBuilder(scansEndpoint)
                 .timeout(Duration.ofSeconds(10))
@@ -112,100 +55,70 @@ public final class HttpScanTransport {
                 .build();
 
         httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
-                .whenComplete((response, throwable) -> handleResponse(pending, response, throwable));
+                .whenComplete((response, throwable) -> handleSendResult(scanId, coordinate, empty, response, throwable));
     }
 
-    private void handleResponse(PendingScan pending, HttpResponse<String> response, Throwable throwable) {
+    public void bootstrap() {
+        fetchChunksPage();
+    }
+
+    public void clear() {
+        serverKnownChunks.clear();
+    }
+
+    public boolean shouldTransmitEmpty(String dimension, ChunkPos pos) {
+        return serverKnownChunks.contains(new ChunkCoordinate(dimension, pos.x, pos.z));
+    }
+
+    private void handleSendResult(String scanId, ChunkCoordinate coordinate, boolean empty,
+                                  HttpResponse<String> response, Throwable throwable) {
         if (throwable != null) {
-            GlumboPricebook.LOGGER.warn("Failed to send scan {}: {}", pending.scan().scanId(), throwable.toString());
-            scheduleRetry(pending);
             return;
         }
 
         int status = response.statusCode();
         if (status >= 200 && status < 300) {
-            if (pending.empty()) {
-                serverKnownChunks.remove(pending.coordinate());
+            if (empty) {
+                serverKnownChunks.remove(coordinate);
             } else {
-                serverKnownChunks.add(pending.coordinate());
+                serverKnownChunks.add(coordinate);
             }
-            GlumboPricebook.LOGGER.debug("Delivered scan {} with status {}", pending.scan().scanId(), status);
-            sending.set(false);
-            processQueue();
             return;
         }
 
-        GlumboPricebook.LOGGER.warn("Scan {} rejected with status {} body={} ", pending.scan().scanId(), status, response.body());
-        scheduleRetry(pending);
     }
 
-    private void scheduleRetry(PendingScan pending) {
-        if (pending.attempt() + 1 >= MAX_ATTEMPTS) {
-            GlumboPricebook.LOGGER.error("Exceeded retry attempts for scan {}. Dropping.", pending.scan().scanId());
-            sending.set(false);
-            processQueue();
-            return;
-        }
-
-        queue.offer(pending.nextAttempt());
-        nextAttempt = Instant.now().plus(config.reconnectBackoff());
-        sending.set(false);
-        processQueue();
-    }
-
-    private String encodeScan(ShopScan scan) {
+    private String encodePayload(String senderId, String scanId, String dimension, ChunkPos pos,
+                                  List<ShopSignParser.ShopEntry> shops) {
         JsonObject root = new JsonObject();
-        root.addProperty("senderId", scan.senderId());
-        root.addProperty("scanId", scan.scanId());
-        root.addProperty("dimension", scan.dimension());
-        root.addProperty("chunkX", scan.chunkX());
-        root.addProperty("chunkZ", scan.chunkZ());
-        root.addProperty("scannedAt", scan.scannedAt().toString());
+        root.addProperty("senderId", senderId);
+        root.addProperty("scanId", scanId);
+        root.addProperty("dimension", dimension);
+        root.addProperty("chunkX", pos.x);
+        root.addProperty("chunkZ", pos.z);
+        root.addProperty("scannedAt", Instant.now().toString());
 
-        JsonArray shops = new JsonArray();
-        for (ShopObservation observation : scan.shops()) {
+        JsonArray shopsJson = new JsonArray();
+        for (ShopSignParser.ShopEntry entry : shops) {
             JsonObject shop = new JsonObject();
-            shop.addProperty("owner", observation.owner());
-            shop.addProperty("item", observation.item());
-            shop.addProperty("price", observation.price());
-            shop.addProperty("amount", observation.amount());
-            shop.addProperty("dimension", observation.dimension());
-            shop.addProperty("action", observation.action().apiValue());
+            shop.addProperty("owner", entry.owner());
+            shop.addProperty("item", entry.item());
+            shop.addProperty("price", entry.price());
+            shop.addProperty("amount", entry.amount());
+            shop.addProperty("dimension", dimension);
+            shop.addProperty("action", entry.action());
 
             JsonArray position = new JsonArray();
-            int[] coords = observation.asPositionArray();
-            position.add(coords[0]);
-            position.add(coords[1]);
-            position.add(coords[2]);
+            position.add(entry.position().getX());
+            position.add(entry.position().getY());
+            position.add(entry.position().getZ());
             shop.add("position", position);
 
-            shops.add(shop);
+            shopsJson.add(shop);
         }
 
-        root.add("shops", shops);
+        root.add("shops", shopsJson);
         return root.toString();
-    }
-
-    private static String normalizeBaseUrl(String baseUrl) {
-        String trimmed = baseUrl == null ? "" : baseUrl.trim();
-        if (trimmed.isEmpty()) {
-            trimmed = "http://localhost:49876";
-        }
-
-        while (trimmed.endsWith("/")) {
-            trimmed = trimmed.substring(0, trimmed.length() - 1);
-        }
-
-        try {
-            URI uri = URI.create(trimmed);
-            if (uri.getScheme() == null || uri.getHost() == null) {
-                throw new IllegalArgumentException("Base URL missing scheme or host");
-            }
-            return trimmed;
-        } catch (IllegalArgumentException ex) {
-            GlumboPricebook.LOGGER.error("Invalid API base URL '{}', falling back to default", baseUrl, ex);
-            return "http://localhost:49876";
-        }
     }
 
     private void fetchChunksPage() {
@@ -217,17 +130,15 @@ public final class HttpScanTransport {
                 .build();
 
         httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
-                .whenComplete((response, throwable) -> handleChunksResponse(offset, response, throwable));
+                .whenComplete((response, throwable) -> handleChunksResponse(response, throwable));
     }
 
-    private void handleChunksResponse(int offset, HttpResponse<String> response, Throwable throwable) {
+    private void handleChunksResponse(HttpResponse<String> response, Throwable throwable) {
         if (throwable != null) {
-            GlumboPricebook.LOGGER.warn("Failed to fetch chunk bootstrap data: {}", throwable.toString());
             return;
         }
 
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            GlumboPricebook.LOGGER.warn("Chunk bootstrap request failed with status {} body={}", response.statusCode(), response.body());
             return;
         }
 
@@ -236,13 +147,7 @@ public final class HttpScanTransport {
             return;
         }
 
-        for (ChunkCoordinate chunk : chunks) {
-            serverKnownChunks.add(chunk);
-        }
-
-        if (chunks.size() == PAGE_SIZE) {
-            fetchChunksPage(offset + PAGE_SIZE);
-        }
+        serverKnownChunks.addAll(chunks);
     }
 
     private List<ChunkCoordinate> parseChunkList(String body) {
@@ -273,28 +178,19 @@ public final class HttpScanTransport {
                 try {
                     result.add(new ChunkCoordinate(dim.getAsString(), chunkX.getAsInt(), chunkZ.getAsInt()));
                 } catch (RuntimeException ignored) {
-                    // Skip malformed entries without aborting the entire list.
+                    // skip malformed entry
                 }
             }
         } catch (RuntimeException ex) {
-            GlumboPricebook.LOGGER.warn("Failed to parse chunk bootstrap payload: {}", ex.toString());
+            // ignore malformed payloads
         }
         return result;
     }
 
-    private record PendingScan(ShopScan scan, int attempt, boolean empty, ChunkCoordinate coordinate) {
-        PendingScan nextAttempt() {
-            return new PendingScan(scan, attempt + 1, empty, coordinate);
-        }
-    }
 
     private record ChunkCoordinate(String dimension, int chunkX, int chunkZ) {
         ChunkCoordinate {
             dimension = dimension == null ? "" : dimension.toLowerCase();
-        }
-
-        static ChunkCoordinate fromScan(ShopScan scan) {
-            return new ChunkCoordinate(scan.dimension(), scan.chunkX(), scan.chunkZ());
         }
     }
 }

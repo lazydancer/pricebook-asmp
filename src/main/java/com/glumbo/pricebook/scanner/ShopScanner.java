@@ -4,8 +4,11 @@ import com.glumbo.pricebook.config.ModConfig;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import net.minecraft.client.world.ClientWorld;
+import net.minecraft.registry.RegistryKey;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
+import net.minecraft.world.World;
 import net.minecraft.world.chunk.WorldChunk;
 
 import java.util.Comparator;
@@ -17,37 +20,21 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 public final class ShopScanner {
-    private static final Comparator<ShopObservation> OBSERVATION_ORDER = Comparator
-            .comparing(ShopObservation::owner, String.CASE_INSENSITIVE_ORDER)
-            .thenComparing(ShopObservation::item, String.CASE_INSENSITIVE_ORDER)
-            .thenComparingInt(observation -> observation.position().getX())
-            .thenComparingInt(observation -> observation.position().getY())
-            .thenComparingInt(observation -> observation.position().getZ())
-            .thenComparing(observation -> observation.action().apiValue());
+    private static final Comparator<ShopSignParser.ShopEntry> ENTRY_ORDER = Comparator
+            .comparing(ShopSignParser.ShopEntry::owner, String.CASE_INSENSITIVE_ORDER)
+            .thenComparing(ShopSignParser.ShopEntry::item, String.CASE_INSENSITIVE_ORDER)
+            .thenComparingInt(entry -> entry.position().getX())
+            .thenComparingInt(entry -> entry.position().getY())
+            .thenComparingInt(entry -> entry.position().getZ())
+            .thenComparing(ShopSignParser.ShopEntry::action);
 
     private final ModConfig config;
-    private final ScanBuffer buffer;
     private final HttpScanTransport transport;
-    private final Long2ObjectMap<Set<ShopObservation>> lastKnownShops = new Long2ObjectOpenHashMap<>();
+    private final Long2ObjectMap<Set<ShopSignParser.ShopEntry>> lastKnownShops = new Long2ObjectOpenHashMap<>();
 
-    private int flushTicks;
-
-    public ShopScanner(ModConfig config, ScanBuffer buffer, HttpScanTransport transport) {
+    public ShopScanner(ModConfig config, HttpScanTransport transport) {
         this.config = Objects.requireNonNull(config, "config");
-        this.buffer = Objects.requireNonNull(buffer, "buffer");
         this.transport = Objects.requireNonNull(transport, "transport");
-    }
-
-    public void tick() {
-        if (!config.trackShops) {
-            return;
-        }
-
-        flushTicks++;
-        if (flushTicks >= Math.max(1, config.ticksBetweenSends)) {
-            flushTicks = 0;
-            flushBuffer();
-        }
     }
 
     public void scanChunk(ClientWorld world, int chunkX, int chunkZ) {
@@ -72,26 +59,24 @@ public final class ShopScanner {
         ChunkPos pos = chunk.getPos();
         long key = pos.toLong();
 
-        Set<ShopObservation> current = collectShops(world, chunk);
-        Set<ShopObservation> previous = lastKnownShops.get(key);
-
-        boolean changed = previous == null || !previous.equals(current);
-        if (!changed) {
+        Set<ShopSignParser.ShopEntry> current = collectShops(world, chunk);
+        Set<ShopSignParser.ShopEntry> previous = lastKnownShops.get(key);
+        if (previous != null && previous.equals(current)) {
             return;
         }
 
         lastKnownShops.put(key, Set.copyOf(current));
 
-        List<ShopObservation> sorted = current.stream()
-                .sorted(OBSERVATION_ORDER)
+        List<ShopSignParser.ShopEntry> sorted = current.stream()
+                .sorted(ENTRY_ORDER)
                 .collect(Collectors.toList());
 
-        String dimension = DimensionUtil.lookup(world);
+        String dimension = lookupDimension(world);
         if (sorted.isEmpty() && !transport.shouldTransmitEmpty(dimension, pos)) {
             return;
         }
-        ShopScan scan = ShopScan.create(config.senderId, dimension, pos, sorted);
-        buffer.enqueue(scan);
+
+        transport.sendScan(config.senderId, dimension, pos, sorted);
     }
 
     public void forgetChunk(ChunkPos pos) {
@@ -100,29 +85,18 @@ public final class ShopScanner {
 
     public void reset() {
         lastKnownShops.clear();
-        flushTicks = 0;
-        buffer.drain();
     }
 
-    public void flushNow() {
-        flushTicks = 0;
-        flushBuffer();
-    }
-
-    public int pendingScanCount() {
-        return buffer.size();
-    }
-
-    private Set<ShopObservation> collectShops(ClientWorld world, WorldChunk chunk) {
-        Set<ShopObservation> observations = new HashSet<>();
+    private Set<ShopSignParser.ShopEntry> collectShops(ClientWorld world, WorldChunk chunk) {
+        Set<ShopSignParser.ShopEntry> entries = new HashSet<>();
         chunk.getBlockEntityPositions().forEach((BlockPos pos) -> {
-            Optional<ShopObservation> parsed = parseShop(world, pos);
-            parsed.ifPresent(observations::add);
+            Optional<ShopSignParser.ShopEntry> parsed = parseShop(world, pos);
+            parsed.ifPresent(entries::add);
         });
-        return observations;
+        return entries;
     }
 
-    private Optional<ShopObservation> parseShop(ClientWorld world, BlockPos pos) {
+    private Optional<ShopSignParser.ShopEntry> parseShop(ClientWorld world, BlockPos pos) {
         if (world == null) {
             return Optional.empty();
         }
@@ -132,10 +106,13 @@ public final class ShopScanner {
         return Optional.empty();
     }
 
-    private void flushBuffer() {
-        List<ShopScan> scans = buffer.drain();
-        if (!scans.isEmpty()) {
-            transport.submit(scans);
-        }
+    private static String lookupDimension(World world) {
+        RegistryKey<World> key = world.getRegistryKey();
+        Identifier id = key.getValue();
+        return switch (id.toString()) {
+            case "minecraft:the_nether" -> "nether";
+            case "minecraft:the_end" -> "end";
+            default -> "overworld";
+        };
     }
 }

@@ -22,7 +22,7 @@ final class ShopSignParser {
     private ShopSignParser() {
     }
 
-    static Optional<ShopObservation> parse(World world, BlockPos pos, SignBlockEntity sign) {
+    static Optional<ShopEntry> parse(World world, BlockPos pos, SignBlockEntity sign) {
         BlockState blockState = world.getBlockState(pos);
         if (!(blockState.getBlock() instanceof SignBlock || blockState.getBlock() instanceof WallSignBlock)) {
             return Optional.empty();
@@ -42,12 +42,8 @@ final class ShopSignParser {
             return Optional.empty();
         }
 
-        if (statusLine.toLowerCase(Locale.ROOT).contains("out of stock")) {
-            return Optional.empty();
-        }
-
-        Optional<ShopAction> action = ShopAction.fromStatusLine(statusLine);
-        if (action.isEmpty()) {
+        String action = resolveAction(statusLine);
+        if (action == null) {
             return Optional.empty();
         }
 
@@ -59,19 +55,10 @@ final class ShopSignParser {
         }
 
         int amount = extractAmount(statusLine);
-        String dimension = DimensionUtil.lookup(world);
+        return Optional.of(new ShopEntry(owner, item, pos.toImmutable(), price, amount, action));
+    }
 
-        ShopObservation observation = new ShopObservation(
-                owner,
-                item,
-                pos.toImmutable(),
-                price,
-                amount,
-                dimension,
-                action.get()
-        );
-
-        return Optional.of(observation);
+    static record ShopEntry(String owner, String item, BlockPos position, double price, int amount, String action) {
     }
 
     private static String[] readLines(SignBlockEntity sign) {
@@ -101,4 +88,17 @@ final class ShopSignParser {
         throw new NumberFormatException("Cannot parse price from line: " + priceLine);
     }
 
+    private static String resolveAction(String statusLine) {
+        String lower = statusLine.toLowerCase(Locale.ROOT);
+        if (lower.contains("selling")) {
+            return "sell";
+        }
+        if (lower.contains("buying")) {
+            return "buy";
+        }
+        if (lower.contains("out of stock") || lower.contains("out-of-stock") || lower.contains("outofstock")) {
+            return "out of stock";
+        }
+        return null;
+    }
 }
