@@ -1,0 +1,14 @@
+{
+	"required": true,
+	"package": "com.glumbo.pricebook.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"mixins": [
+		"ClientPlayNetworkHandlerMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}
