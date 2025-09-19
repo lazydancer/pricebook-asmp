@@ -1,15 +1,26 @@
 package com.glumbo.pricebook;
 
+import com.glumbo.pricebook.command.PricebookCommand;
+import com.glumbo.pricebook.command.PricebookQueryService;
 import com.glumbo.pricebook.config.ModConfig;
 import com.glumbo.pricebook.scanner.HttpScanTransport;
 import com.glumbo.pricebook.scanner.ShopScanner;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.network.ServerInfo;
+
+import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
 
 public final class GlumboPricebookClient implements ClientModInitializer {
     private static ShopScanner scanner;
     private static HttpScanTransport transport;
     private static ModConfig config;
+    private static boolean enabled;
+    private static PricebookQueryService queryService;
+    private static List<String> itemCatalog = List.of();
 
     @Override
     public void onInitializeClient() {
@@ -17,10 +28,15 @@ public final class GlumboPricebookClient implements ClientModInitializer {
 
         transport = new HttpScanTransport(config);
         scanner = new ShopScanner(config, transport);
+        queryService = new PricebookQueryService(config);
 
         registerEvents();
 
+        enabled = shouldEnableForCurrentServer();
         bootstrapTransport();
+        refreshItemCatalog();
+
+        PricebookCommand.register();
     }
 
     private void registerEvents() {
@@ -39,10 +55,31 @@ public final class GlumboPricebookClient implements ClientModInitializer {
         return transport;
     }
 
+    public static PricebookQueryService pricebookQueryService() {
+        return queryService;
+    }
+
+    public static List<String> itemCatalog() {
+        return itemCatalog;
+    }
+
+    public static boolean isEnabled() {
+        return enabled;
+    }
+
     public static void bootstrapTransport() {
-        if (transport != null) {
+        if (transport != null && enabled) {
             transport.bootstrap();
         }
+    }
+
+    public static void onMultiplayerJoin() {
+        resetForNewWorld();
+        enabled = shouldEnableForCurrentServer();
+        if (enabled) {
+            bootstrapTransport();
+        }
+        refreshItemCatalog();
     }
 
     public static void resetForNewWorld() {
@@ -52,5 +89,60 @@ public final class GlumboPricebookClient implements ClientModInitializer {
         if (transport != null) {
             transport.clear();
         }
+        enabled = false;
+        itemCatalog = List.of();
+    }
+
+    private static boolean shouldEnableForCurrentServer() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null) {
+            return false;
+        }
+        if (client.isIntegratedServerRunning()) {
+            return false;
+        }
+
+        ServerInfo info = client.getCurrentServerEntry();
+        if (info == null) {
+            return false;
+        }
+
+        String address = info.address;
+        if (address == null || address.isBlank()) {
+            return false;
+        }
+
+        String normalized = address.toLowerCase(Locale.ROOT).trim();
+        if (normalized.isEmpty()) {
+            return false;
+        }
+
+        if (normalized.startsWith("[")) {
+            return false;
+        }
+
+        if (normalized.equals("asmp.cc")) {
+            return true;
+        }
+
+        return normalized.startsWith("asmp.cc:");
+    }
+
+    private static void refreshItemCatalog() {
+        if (!enabled || queryService == null) {
+            itemCatalog = List.of();
+            return;
+        }
+
+        CompletableFuture<List<String>> future = queryService.fetchCatalog();
+        future.thenAccept(list -> {
+            MinecraftClient client = MinecraftClient.getInstance();
+            List<String> safeList = list == null ? List.of() : List.copyOf(list);
+            if (client != null) {
+                client.execute(() -> itemCatalog = safeList);
+            } else {
+                itemCatalog = safeList;
+            }
+        });
     }
 }

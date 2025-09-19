@@ -22,7 +22,7 @@ public abstract class ClientPlayNetworkHandlerMixin {
     @Inject(method = "onChunkData", at = @At("TAIL"))
     private void glumbo$scanChunk(ChunkDataS2CPacket packet, CallbackInfo ci) {
         ShopScanner scanner = GlumboPricebookClient.scanner();
-        if (scanner == null || world == null) {
+        if (scanner == null || world == null || !GlumboPricebookClient.isEnabled()) {
             return;
         }
 
@@ -37,8 +37,7 @@ public abstract class ClientPlayNetworkHandlerMixin {
 
     @Inject(method = "onGameJoin", at = @At("TAIL"))
     private void glumbo$resetScanner(GameJoinS2CPacket packet, CallbackInfo ci) {
-        GlumboPricebookClient.resetForNewWorld();
-        GlumboPricebookClient.bootstrapTransport();
+        GlumboPricebookClient.onMultiplayerJoin();
     }
 
     @Inject(method = "onUnloadChunk", at = @At("TAIL"))
