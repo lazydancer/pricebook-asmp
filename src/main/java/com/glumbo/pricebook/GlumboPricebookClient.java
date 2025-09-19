@@ -1,5 +1,6 @@
 package com.glumbo.pricebook;
 
+import com.glumbo.pricebook.client.ShopHighlighter;
 import com.glumbo.pricebook.command.PricebookCommand;
 import com.glumbo.pricebook.command.PricebookQueryService;
 import com.glumbo.pricebook.config.ModConfig;
@@ -31,6 +32,8 @@ public final class GlumboPricebookClient implements ClientModInitializer {
         queryService = new PricebookQueryService(config);
 
         registerEvents();
+
+        ShopHighlighter.init();
 
         enabled = shouldEnableForCurrentServer();
         bootstrapTransport();
@@ -91,6 +94,7 @@ public final class GlumboPricebookClient implements ClientModInitializer {
         }
         enabled = false;
         itemCatalog = List.of();
+        ShopHighlighter.clear();
     }
 
     private static boolean shouldEnableForCurrentServer() {

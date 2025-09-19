@@ -1,9 +1,12 @@
 package com.glumbo.pricebook.command;
 
 import com.glumbo.pricebook.GlumboPricebookClient;
+import com.glumbo.pricebook.client.ShopHighlighter;
 import com.glumbo.pricebook.command.PricebookQueryService.ItemInfo;
 import com.glumbo.pricebook.command.PricebookQueryService.ItemLookupResult;
 import com.glumbo.pricebook.command.PricebookQueryService.Listing;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
@@ -14,6 +17,8 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.command.CommandSource;
 import net.minecraft.item.ItemStack;
+import net.minecraft.text.ClickEvent;
+import net.minecraft.text.HoverEvent;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
@@ -37,6 +42,7 @@ public final class PricebookCommand {
             .withZone(ZoneId.systemDefault());
     private static final DecimalFormat PRICE_FORMAT = new DecimalFormat("0.###",
             DecimalFormatSymbols.getInstance(Locale.ROOT));
+    private static final String HIGHLIGHT_COMMAND_NAME = "pricebook_mark";
 
     static {
         PRICE_FORMAT.setGroupingUsed(false);
@@ -58,6 +64,22 @@ public final class PricebookCommand {
                     .then(ClientCommandManager.argument("item", com.mojang.brigadier.arguments.StringArgumentType.greedyString())
                             .suggests(PricebookCommand::suggestItems)
                             .executes(ctx -> execute(ctx.getSource(), com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "item")))));
+
+            dispatcher.register(ClientCommandManager.literal(HIGHLIGHT_COMMAND_NAME)
+                    .then(ClientCommandManager.argument("x", IntegerArgumentType.integer())
+                            .then(ClientCommandManager.argument("y", IntegerArgumentType.integer())
+                                    .then(ClientCommandManager.argument("z", IntegerArgumentType.integer())
+                                            .executes(ctx -> highlight(ctx.getSource(),
+                                                    IntegerArgumentType.getInteger(ctx, "x"),
+                                                    IntegerArgumentType.getInteger(ctx, "y"),
+                                                    IntegerArgumentType.getInteger(ctx, "z"),
+                                                    null))
+                                            .then(ClientCommandManager.argument("dimension", StringArgumentType.word())
+                                                    .executes(ctx -> highlight(ctx.getSource(),
+                                                            IntegerArgumentType.getInteger(ctx, "x"),
+                                                            IntegerArgumentType.getInteger(ctx, "y"),
+                                                            IntegerArgumentType.getInteger(ctx, "z"),
+                                                            StringArgumentType.getString(ctx, "dimension"))))))));
         });
     }
 
@@ -121,6 +143,45 @@ public final class PricebookCommand {
             return builder.buildFuture();
         }
         return CommandSource.suggestMatching(catalog, builder);
+    }
+
+    private static int highlight(FabricClientCommandSource source, int x, int y, int z, String dimensionArg) {
+        MinecraftClient client = source.getClient();
+        if (client == null) {
+            return 0;
+        }
+
+        ClientPlayerEntity player = client.player;
+        if (player == null) {
+            return 0;
+        }
+
+        if (!GlumboPricebookClient.isEnabled()) {
+            player.sendMessage(Text.literal("[Pricebook] Not connected to asmp.cc.").formatted(Formatting.RED), false);
+            return 1;
+        }
+
+        String playerDimension = dimensionName(player.getWorld());
+        String normalizedArg = dimensionArg == null || dimensionArg.isBlank()
+                ? playerDimension
+                : normalizeDimension(dimensionArg);
+        if (normalizedArg.isEmpty()) {
+            normalizedArg = playerDimension;
+        }
+
+        boolean visible = ShopHighlighter.highlight(new BlockPos(x, y, z), normalizedArg);
+
+        String dimensionSuffix = normalizedArg.isEmpty() ? "" : " (" + normalizedArg + ")";
+        if (visible) {
+            player.sendMessage(Text.literal(String.format(Locale.ROOT,
+                    "[Pricebook] Highlighting %d %d %d%s", x, y, z, dimensionSuffix)).formatted(Formatting.AQUA), false);
+        } else {
+            player.sendMessage(Text.literal(String.format(Locale.ROOT,
+                    "[Pricebook] Highlight ready at %d %d %d%s. Switch dimension to view.",
+                    x, y, z, dimensionSuffix)).formatted(Formatting.GRAY), false);
+        }
+
+        return 1;
     }
 
     private static void deliverResult(ClientPlayerEntity playerRef, ItemLookupResult result) {
@@ -191,10 +252,31 @@ public final class PricebookCommand {
 
             String stockOrNeed = seller ? formatStock(listing.amount()) : formatDemand(listing.amount());
             line.append(Text.literal(stockOrNeed).formatted(Formatting.AQUA));
-            line.append(Text.literal(" · " + formatCoordinates(listing.position()))
-                    .formatted(Formatting.GRAY));
 
             String dimension = normalizeDimension(listing.dimension());
+
+            BlockPos listingPos = listing.position();
+            String coordsDisplay = formatCoordinates(listingPos);
+            String highlightDimension = (dimension.isEmpty() ? playerDimension : dimension);
+            MutableText coordsText = Text.literal(" · " + coordsDisplay)
+                    .formatted(Formatting.GRAY);
+            if (listingPos != null) {
+                String command = highlightDimension.isEmpty()
+                        ? String.format(Locale.ROOT, "/%s %d %d %d",
+                        HIGHLIGHT_COMMAND_NAME, listingPos.getX(), listingPos.getY(), listingPos.getZ())
+                        : String.format(Locale.ROOT, "/%s %d %d %d %s",
+                        HIGHLIGHT_COMMAND_NAME, listingPos.getX(), listingPos.getY(), listingPos.getZ(), highlightDimension);
+                MutableText coordsLink = Text.literal(coordsDisplay)
+                        .formatted(Formatting.GRAY)
+                        .styled(style -> style
+                                .withUnderline(true)
+                                .withClickEvent(new ClickEvent.RunCommand(command))
+                                .withHoverEvent(new HoverEvent.ShowText(
+                                        Text.literal("Click to highlight location"))));
+                coordsText = Text.literal(" · ").formatted(Formatting.GRAY).append(coordsLink);
+            }
+            line.append(coordsText);
+
             if (!dimension.isEmpty() && !dimension.equals(playerDimension)) {
                 line.append(Text.literal(" · " + dimension).formatted(Formatting.DARK_AQUA));
             }
