@@ -1,6 +1,5 @@
 package com.glumbo.pricebook;
 
-import com.glumbo.pricebook.client.ShopHighlighter;
 import com.glumbo.pricebook.command.PricebookCommand;
 import com.glumbo.pricebook.command.PricebookQueryService;
 import com.glumbo.pricebook.config.ModConfig;
@@ -16,8 +15,6 @@ import net.minecraft.client.network.ServerInfo;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
-
-import static net.minecraft.world.waypoint.Waypoint.*;
 
 public final class GlumboPricebookClient implements ClientModInitializer {
     private static ShopScanner scanner;
@@ -39,8 +36,6 @@ public final class GlumboPricebookClient implements ClientModInitializer {
         waystoneTracker.init();
 
         registerEvents();
-
-        ShopHighlighter.init();
 
         enabled = shouldEnableForCurrentServer();
         bootstrapTransport();
@@ -102,7 +97,6 @@ public final class GlumboPricebookClient implements ClientModInitializer {
         }
         enabled = false;
         itemCatalog = List.of();
-        ShopHighlighter.clear();
         if (waystoneTracker != null) {
             waystoneTracker.reset();
         }

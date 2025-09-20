@@ -1,7 +1,6 @@
 package com.glumbo.pricebook.command;
 
 import com.glumbo.pricebook.GlumboPricebookClient;
-import com.glumbo.pricebook.client.ShopHighlighter;
 import com.glumbo.pricebook.command.PricebookQueryService.ItemInfo;
 import com.glumbo.pricebook.command.PricebookQueryService.ItemLookupResult;
 import com.glumbo.pricebook.command.PricebookQueryService.Listing;
@@ -31,20 +30,14 @@ import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 public final class PricebookCommand {
-    private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm")
-            .withLocale(Locale.ROOT)
-            .withZone(ZoneId.systemDefault());
     private static final DecimalFormat PRICE_FORMAT = new DecimalFormat("0.###",
             DecimalFormatSymbols.getInstance(Locale.ROOT));
-    private static final String HIGHLIGHT_COMMAND_NAME = "pricebook_mark";
     private static final String WAYPOINT_COMMAND_NAME = "pricebook_waypoint";
 
     static {
@@ -58,31 +51,15 @@ public final class PricebookCommand {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
             dispatcher.register(ClientCommandManager.literal("pricebook")
                     .executes(ctx -> execute(ctx.getSource(), null))
-                    .then(ClientCommandManager.argument("item", com.mojang.brigadier.arguments.StringArgumentType.greedyString())
+                    .then(ClientCommandManager.argument("item", StringArgumentType.greedyString())
                             .suggests(PricebookCommand::suggestItems)
-                            .executes(ctx -> execute(ctx.getSource(), com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "item")))));
+                            .executes(ctx -> execute(ctx.getSource(), StringArgumentType.getString(ctx, "item")))));
 
             dispatcher.register(ClientCommandManager.literal("pb")
                     .executes(ctx -> execute(ctx.getSource(), null))
-                    .then(ClientCommandManager.argument("item", com.mojang.brigadier.arguments.StringArgumentType.greedyString())
+                    .then(ClientCommandManager.argument("item", StringArgumentType.greedyString())
                             .suggests(PricebookCommand::suggestItems)
-                            .executes(ctx -> execute(ctx.getSource(), com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "item")))));
-
-            dispatcher.register(ClientCommandManager.literal(HIGHLIGHT_COMMAND_NAME)
-                    .then(ClientCommandManager.argument("x", IntegerArgumentType.integer())
-                            .then(ClientCommandManager.argument("y", IntegerArgumentType.integer())
-                                    .then(ClientCommandManager.argument("z", IntegerArgumentType.integer())
-                                            .executes(ctx -> highlight(ctx.getSource(),
-                                                    IntegerArgumentType.getInteger(ctx, "x"),
-                                                    IntegerArgumentType.getInteger(ctx, "y"),
-                                                    IntegerArgumentType.getInteger(ctx, "z"),
-                                                    null))
-                                            .then(ClientCommandManager.argument("dimension", StringArgumentType.word())
-                                                    .executes(ctx -> highlight(ctx.getSource(),
-                                                            IntegerArgumentType.getInteger(ctx, "x"),
-                                                            IntegerArgumentType.getInteger(ctx, "y"),
-                                                            IntegerArgumentType.getInteger(ctx, "z"),
-                                                            StringArgumentType.getString(ctx, "dimension"))))))));
+                            .executes(ctx -> execute(ctx.getSource(), StringArgumentType.getString(ctx, "item")))));
 
             dispatcher.register(ClientCommandManager.literal(WAYPOINT_COMMAND_NAME)
                     .then(ClientCommandManager.argument("x", IntegerArgumentType.integer())
@@ -161,45 +138,6 @@ public final class PricebookCommand {
         return CommandSource.suggestMatching(catalog, builder);
     }
 
-    private static int highlight(FabricClientCommandSource source, int x, int y, int z, String dimensionArg) {
-        MinecraftClient client = source.getClient();
-        if (client == null) {
-            return 0;
-        }
-
-        ClientPlayerEntity player = client.player;
-        if (player == null) {
-            return 0;
-        }
-
-        if (!GlumboPricebookClient.isEnabled()) {
-            player.sendMessage(Text.literal("[Pricebook] Not connected to asmp.cc.").formatted(Formatting.RED), false);
-            return 1;
-        }
-
-        String playerDimension = dimensionName(player.getWorld());
-        String normalizedArg = dimensionArg == null || dimensionArg.isBlank()
-                ? playerDimension
-                : normalizeDimension(dimensionArg);
-        if (normalizedArg.isEmpty()) {
-            normalizedArg = playerDimension;
-        }
-
-        boolean visible = ShopHighlighter.highlight(new BlockPos(x, y, z), normalizedArg);
-
-        String dimensionSuffix = normalizedArg.isEmpty() ? "" : " (" + normalizedArg + ")";
-        if (visible) {
-            player.sendMessage(Text.literal(String.format(Locale.ROOT,
-                    "[Pricebook] Highlighting %d %d %d%s", x, y, z, dimensionSuffix)).formatted(Formatting.AQUA), false);
-        } else {
-            player.sendMessage(Text.literal(String.format(Locale.ROOT,
-                    "[Pricebook] Highlight ready at %d %d %d%s. Switch dimension to view.",
-                    x, y, z, dimensionSuffix)).formatted(Formatting.GRAY), false);
-        }
-
-        return 1;
-    }
-
     private static int createWaypoint(FabricClientCommandSource source, int x, int y, int z,
                                       String dimensionArg, String name) {
         MinecraftClient client = source.getClient();
@@ -222,7 +160,7 @@ public final class PricebookCommand {
         if (success) {
             player.sendMessage(Text.literal(String.format(Locale.ROOT,
                     "[Pricebook] Created waypoint '%s'. Run /pb again to clear",
-                    name == null || name.isBlank() ? "Waystone" : name)).formatted(Formatting.LIGHT_PURPLE), false);
+                    name == null || name.isBlank() ? "Waystone" : name)).formatted(Formatting.AQUA), false);
             return 1;
         }
 
@@ -255,14 +193,13 @@ public final class PricebookCommand {
             return;
         }
 
-        String itemName = info.itemName() == null || info.itemName().isBlank() ? "Unknown item" : info.itemName();
-        Instant refreshedAt = info.refreshedAt();
-        String refreshed = refreshedAt == null || refreshedAt.equals(Instant.EPOCH)
-                ? "unknown"
-                : TIME_FORMATTER.format(refreshedAt);
+        String itemName = toTitleCase(info.itemName() == null || info.itemName().isBlank() ? "Unknown item" : info.itemName());
 
-        String header = String.format(Locale.ROOT, "[Pricebook] %s · refreshed %s", itemName, refreshed);
-        player.sendMessage(Text.literal(header).formatted(Formatting.GOLD), false);
+        MutableText header = Text.literal("").append(Text.literal("━━━━━━━━ ").formatted(Formatting.DARK_GRAY))
+                .append(Text.literal("[Pricebook] ").formatted(Formatting.AQUA))
+                .append(Text.literal(itemName).formatted(Formatting.AQUA))
+                .append(Text.literal(" ━━━━━━━━").formatted(Formatting.DARK_GRAY));
+        player.sendMessage(header, false);
 
         List<Listing> sellers = info.topSellers();
         List<Listing> buyers = info.topBuyers();
@@ -271,21 +208,23 @@ public final class PricebookCommand {
         boolean noBuyers = buyers == null || buyers.isEmpty();
 
         if (noSellers && noBuyers) {
-            player.sendMessage(Text.literal("[Pricebook] No buyers or sellers yet.").formatted(Formatting.GRAY), false);
+            player.sendMessage(Text.literal("No buyers or sellers yet.").formatted(Formatting.GRAY), false);
             return;
         }
 
-        sendList(player, "Top Sellers", sellers, true);
-        sendList(player, "Top Buyers", buyers, false);
+        sendList(player, "Sellers", sellers);
+
+        if (!noBuyers) {
+            sendList(player, "Buyers", buyers);
+        }
     }
 
-    private static void sendList(ClientPlayerEntity player, String title, List<Listing> entries, boolean seller) {
-        player.sendMessage(Text.literal(title).formatted(Formatting.YELLOW), false);
-
+    private static void sendList(ClientPlayerEntity player, String title, List<Listing> entries) {
         if (entries == null || entries.isEmpty()) {
-            player.sendMessage(Text.literal("  none").formatted(Formatting.DARK_GRAY), false);
             return;
         }
+
+        player.sendMessage(Text.literal(title).formatted(Formatting.AQUA), false);
 
         String playerDimension = dimensionName(player.getWorld());
         Instant now = Instant.now();
@@ -294,37 +233,30 @@ public final class PricebookCommand {
         for (int i = 0; i < limit; i++) {
             Listing listing = entries.get(i);
             String owner = listing.owner() == null || listing.owner().isBlank() ? "Unknown" : listing.owner();
-            MutableText line = Text.literal(String.format(Locale.ROOT, "%d) %s — %s ", i + 1,
-                    owner, PRICE_FORMAT.format(listing.price())));
 
-            String stockOrNeed = seller ? formatStock(listing.amount()) : formatDemand(listing.amount());
-            line.append(Text.literal(stockOrNeed).formatted(Formatting.AQUA));
+            String priceStr = PRICE_FORMAT.format(listing.price());
+            int amount = Math.max(0, listing.amount());
+
+            final Text separator = Text.literal(" · ").formatted(Formatting.DARK_GRAY);
+
+            MutableText line = Text.literal(String.format(Locale.ROOT, " %d ", i + 1)).formatted(Formatting.DARK_GRAY);
+            line.append(separator).append(Text.literal(priceStr).formatted(Formatting.AQUA));
+
+            MutableText quantityPart = Text.literal("[").formatted(Formatting.GRAY)
+                    .append(Text.literal(String.valueOf(amount)).formatted(Formatting.AQUA))
+                    .append(Text.literal("]").formatted(Formatting.GRAY));
+            line.append(separator).append(quantityPart);
+
+            line.append(separator).append(Text.literal(owner).formatted(Formatting.GRAY));
 
             String dimension = normalizeDimension(listing.dimension());
-
-            BlockPos listingPos = listing.position();
-            String coordsDisplay = formatCoordinates(listingPos);
             String highlightDimension = (dimension.isEmpty() ? playerDimension : dimension);
-            MutableText coordsLink = Text.literal(coordsDisplay)
-                    .formatted(Formatting.GRAY);
-            if (listingPos != null) {
-                String command = highlightDimension.isEmpty()
-                        ? String.format(Locale.ROOT, "/%s %d %d %d",
-                        HIGHLIGHT_COMMAND_NAME, listingPos.getX(), listingPos.getY(), listingPos.getZ())
-                        : String.format(Locale.ROOT, "/%s %d %d %d %s",
-                        HIGHLIGHT_COMMAND_NAME, listingPos.getX(), listingPos.getY(), listingPos.getZ(), highlightDimension);
-                coordsLink = coordsLink.styled(style -> style
-                        .withUnderline(true)
-                        .withClickEvent(new ClickEvent.RunCommand(command))
-                        .withHoverEvent(new HoverEvent.ShowText(
-                                Text.literal("Click to highlight location"))));
-            }
 
             WaystoneReference waystone = listing.nearestWaystone();
             if (waystone != null && waystone.position() != null) {
                 BlockPos wsPos = waystone.position();
                 String wsName = waystone.name() == null || waystone.name().isBlank()
-                        ? "Nearest Waystone"
+                        ? "Waystone"
                         : waystone.name();
                 String dimensionArg = highlightDimension.isEmpty() ? playerDimension : highlightDimension;
                 if (dimensionArg == null) {
@@ -337,25 +269,36 @@ public final class PricebookCommand {
                         sanitizeNameForCommand(wsName));
 
                 MutableText wsLink = Text.literal(wsName)
-                        .formatted(Formatting.LIGHT_PURPLE)
+                        .formatted(Formatting.GRAY)
                         .styled(style -> style
-                                .withUnderline(true)
                                 .withClickEvent(new ClickEvent.RunCommand(wsCommand))
                                 .withHoverEvent(new HoverEvent.ShowText(
-                                        Text.literal("Click to create waypoint"))));
+                                        Text.literal("Click to create waypoint at " + wsName))));
 
-                line.append(Text.literal(" · ").formatted(Formatting.GRAY)).append(wsLink);
+                line.append(separator).append(wsLink);
             }
 
-            line.append(Text.literal(" · ").formatted(Formatting.GRAY)).append(coordsLink);
+            BlockPos listingPos = listing.position();
+            if (listingPos != null) {
+                String waypointName = String.format("%s's Shop", owner);
+                String command = String.format(Locale.ROOT, "/%s %d %d %d %s %s",
+                        WAYPOINT_COMMAND_NAME, listingPos.getX(), listingPos.getY(), listingPos.getZ(),
+                        highlightDimension.isEmpty() ? "_" : highlightDimension, sanitizeNameForCommand(waypointName));
+                MutableText coordsLink = Text.literal(formatCoordinates(listingPos))
+                        .formatted(Formatting.GRAY)
+                        .styled(style -> style
+                                .withClickEvent(new ClickEvent.RunCommand(command))
+                                .withHoverEvent(new HoverEvent.ShowText(
+                                        Text.literal("Click to create waypoint at shop"))));
+                line.append(separator).append(coordsLink);
+            }
 
             if (!dimension.isEmpty() && !dimension.equals(playerDimension)) {
-                line.append(Text.literal(" · " + dimension).formatted(Formatting.DARK_AQUA));
+                line.append(Text.literal(" (" + dimension + ")").formatted(Formatting.DARK_AQUA));
             }
 
             if (isStale(now, listing.lastSeenAt())) {
-                line.append(Text.literal(" · ").formatted(Formatting.GRAY));
-                line.append(Text.literal("⚠ stale").formatted(Formatting.RED));
+                line.append(Text.literal(" [Stale]").formatted(Formatting.RED));
             }
 
             player.sendMessage(line, false);
@@ -367,7 +310,7 @@ public final class PricebookCommand {
             return true;
         }
         Duration age = Duration.between(lastSeen, now).abs();
-        return age.toMinutes() >= 60*24;
+        return age.toMinutes() >= 60 * 24;
     }
 
     private static String formatCoordinates(BlockPos listingPos) {
@@ -377,32 +320,25 @@ public final class PricebookCommand {
         return String.format(Locale.ROOT, "%d %d %d", listingPos.getX(), listingPos.getY(), listingPos.getZ());
     }
 
-    private static String formatStock(int amount) {
-        return "(qty " + formatAmount(amount) + ")";
-    }
-
-    private static String formatDemand(int amount) {
-        return "(qtu " + formatAmount(amount) + ")";
-    }
-
-    private static String formatAmount(int amount) {
-        double value = Math.abs(amount);
-        if (value >= 1_000_000) {
-            double millions = value / 1_000_000.0;
-            return trimSuffix(String.format(Locale.ROOT, "%.1fm", millions));
+    private static String toTitleCase(String text) {
+        if (text == null || text.isEmpty()) {
+            return text;
         }
-        if (value >= 1000) {
-            double thousands = value / 1000.0;
-            return trimSuffix(String.format(Locale.ROOT, "%.1fk", thousands));
-        }
-        return Integer.toString(Math.max(amount, 0));
-    }
 
-    private static String trimSuffix(String formatted) {
-        if (formatted.endsWith(".0k") || formatted.endsWith(".0m")) {
-            return formatted.replace(".0", "");
+        StringBuilder converted = new StringBuilder();
+        boolean convertNext = true;
+        for (char ch : text.toCharArray()) {
+            if (Character.isSpaceChar(ch)) {
+                convertNext = true;
+            } else if (convertNext) {
+                ch = Character.toTitleCase(ch);
+                convertNext = false;
+            } else {
+                ch = Character.toLowerCase(ch);
+            }
+            converted.append(ch);
         }
-        return formatted;
+        return converted.toString();
     }
 
     private static String dimensionName(World world) {
