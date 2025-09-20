@@ -4,6 +4,7 @@ import com.glumbo.pricebook.client.ShopHighlighter;
 import com.glumbo.pricebook.command.PricebookCommand;
 import com.glumbo.pricebook.command.PricebookQueryService;
 import com.glumbo.pricebook.config.ModConfig;
+import com.glumbo.pricebook.integration.WaypointHelper;
 import com.glumbo.pricebook.scanner.HttpScanTransport;
 import com.glumbo.pricebook.scanner.ShopScanner;
 import com.glumbo.pricebook.scanner.WaystoneTracker;
@@ -15,6 +16,8 @@ import net.minecraft.client.network.ServerInfo;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
+
+import static net.minecraft.world.waypoint.Waypoint.*;
 
 public final class GlumboPricebookClient implements ClientModInitializer {
     private static ShopScanner scanner;
@@ -44,6 +47,7 @@ public final class GlumboPricebookClient implements ClientModInitializer {
         refreshItemCatalog();
 
         PricebookCommand.register();
+        WaypointHelper.initClient();
     }
 
     private void registerEvents() {

@@ -5,6 +5,8 @@ import com.glumbo.pricebook.client.ShopHighlighter;
 import com.glumbo.pricebook.command.PricebookQueryService.ItemInfo;
 import com.glumbo.pricebook.command.PricebookQueryService.ItemLookupResult;
 import com.glumbo.pricebook.command.PricebookQueryService.Listing;
+import com.glumbo.pricebook.command.PricebookQueryService.WaystoneReference;
+import com.glumbo.pricebook.integration.WaypointHelper;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
@@ -43,6 +45,7 @@ public final class PricebookCommand {
     private static final DecimalFormat PRICE_FORMAT = new DecimalFormat("0.###",
             DecimalFormatSymbols.getInstance(Locale.ROOT));
     private static final String HIGHLIGHT_COMMAND_NAME = "pricebook_mark";
+    private static final String WAYPOINT_COMMAND_NAME = "pricebook_waypoint";
 
     static {
         PRICE_FORMAT.setGroupingUsed(false);
@@ -80,6 +83,19 @@ public final class PricebookCommand {
                                                             IntegerArgumentType.getInteger(ctx, "y"),
                                                             IntegerArgumentType.getInteger(ctx, "z"),
                                                             StringArgumentType.getString(ctx, "dimension"))))))));
+
+            dispatcher.register(ClientCommandManager.literal(WAYPOINT_COMMAND_NAME)
+                    .then(ClientCommandManager.argument("x", IntegerArgumentType.integer())
+                            .then(ClientCommandManager.argument("y", IntegerArgumentType.integer())
+                                    .then(ClientCommandManager.argument("z", IntegerArgumentType.integer())
+                                            .then(ClientCommandManager.argument("dimension", StringArgumentType.word())
+                                                    .then(ClientCommandManager.argument("name", StringArgumentType.greedyString())
+                                                            .executes(ctx -> createWaypoint(ctx.getSource(),
+                                                                    IntegerArgumentType.getInteger(ctx, "x"),
+                                                                    IntegerArgumentType.getInteger(ctx, "y"),
+                                                                    IntegerArgumentType.getInteger(ctx, "z"),
+                                                                    StringArgumentType.getString(ctx, "dimension"),
+                                                                    StringArgumentType.getString(ctx, "name")))))))));
         });
     }
 
@@ -93,6 +109,8 @@ public final class PricebookCommand {
         if (player == null) {
             return 0;
         }
+
+        WaypointHelper.clear(); // Always clear the waypoint when running command
 
         if (!GlumboPricebookClient.isEnabled()) {
             player.sendMessage(Text.literal("[Pricebook] Not connected to asmp.cc.").formatted(Formatting.RED), false);
@@ -110,8 +128,6 @@ public final class PricebookCommand {
             player.sendMessage(Text.literal("[Pricebook] Hold an item or specify a name.").formatted(Formatting.RED), false);
             return 1;
         }
-
-        player.sendMessage(Text.literal("[Pricebook] Looking up " + resolved + "…").formatted(Formatting.GRAY), false);
 
         CompletableFuture<ItemLookupResult> future = service.lookup(resolved);
         future.thenAccept(result -> client.execute(() -> deliverResult(player, result)));
@@ -182,6 +198,37 @@ public final class PricebookCommand {
         }
 
         return 1;
+    }
+
+    private static int createWaypoint(FabricClientCommandSource source, int x, int y, int z,
+                                      String dimensionArg, String name) {
+        MinecraftClient client = source.getClient();
+        if (client == null) {
+            return 0;
+        }
+
+        ClientPlayerEntity player = client.player;
+        if (player == null) {
+            return 0;
+        }
+
+        String dimension = normalizeDimension(dimensionArg);
+        if (dimension.isEmpty() || dimension.equals("_")) {
+            dimension = dimensionName(player.getWorld());
+        }
+
+        BlockPos pos = new BlockPos(x, y, z);
+        boolean success = WaypointHelper.createWaypoint(pos, dimension, name);
+        if (success) {
+            player.sendMessage(Text.literal(String.format(Locale.ROOT,
+                    "[Pricebook] Created waypoint '%s'. Run /pb again to clear",
+                    name == null || name.isBlank() ? "Waystone" : name)).formatted(Formatting.LIGHT_PURPLE), false);
+            return 1;
+        }
+
+        player.sendMessage(Text.literal("[Pricebook] Unable to create waypoint."
+        ).formatted(Formatting.RED), false);
+        return 0;
     }
 
     private static void deliverResult(ClientPlayerEntity playerRef, ItemLookupResult result) {
@@ -258,7 +305,7 @@ public final class PricebookCommand {
             BlockPos listingPos = listing.position();
             String coordsDisplay = formatCoordinates(listingPos);
             String highlightDimension = (dimension.isEmpty() ? playerDimension : dimension);
-            MutableText coordsText = Text.literal(" · " + coordsDisplay)
+            MutableText coordsLink = Text.literal(coordsDisplay)
                     .formatted(Formatting.GRAY);
             if (listingPos != null) {
                 String command = highlightDimension.isEmpty()
@@ -266,16 +313,41 @@ public final class PricebookCommand {
                         HIGHLIGHT_COMMAND_NAME, listingPos.getX(), listingPos.getY(), listingPos.getZ())
                         : String.format(Locale.ROOT, "/%s %d %d %d %s",
                         HIGHLIGHT_COMMAND_NAME, listingPos.getX(), listingPos.getY(), listingPos.getZ(), highlightDimension);
-                MutableText coordsLink = Text.literal(coordsDisplay)
-                        .formatted(Formatting.GRAY)
+                coordsLink = coordsLink.styled(style -> style
+                        .withUnderline(true)
+                        .withClickEvent(new ClickEvent.RunCommand(command))
+                        .withHoverEvent(new HoverEvent.ShowText(
+                                Text.literal("Click to highlight location"))));
+            }
+
+            WaystoneReference waystone = listing.nearestWaystone();
+            if (waystone != null && waystone.position() != null) {
+                BlockPos wsPos = waystone.position();
+                String wsName = waystone.name() == null || waystone.name().isBlank()
+                        ? "Nearest Waystone"
+                        : waystone.name();
+                String dimensionArg = highlightDimension.isEmpty() ? playerDimension : highlightDimension;
+                if (dimensionArg == null) {
+                    dimensionArg = "";
+                }
+                String wsCommand = String.format(Locale.ROOT, "/%s %d %d %d %s %s",
+                        WAYPOINT_COMMAND_NAME,
+                        wsPos.getX(), wsPos.getY(), wsPos.getZ(),
+                        dimensionArg.isEmpty() ? "_" : dimensionArg,
+                        sanitizeNameForCommand(wsName));
+
+                MutableText wsLink = Text.literal(wsName)
+                        .formatted(Formatting.LIGHT_PURPLE)
                         .styled(style -> style
                                 .withUnderline(true)
-                                .withClickEvent(new ClickEvent.RunCommand(command))
+                                .withClickEvent(new ClickEvent.RunCommand(wsCommand))
                                 .withHoverEvent(new HoverEvent.ShowText(
-                                        Text.literal("Click to highlight location"))));
-                coordsText = Text.literal(" · ").formatted(Formatting.GRAY).append(coordsLink);
+                                        Text.literal("Click to create waypoint"))));
+
+                line.append(Text.literal(" · ").formatted(Formatting.GRAY)).append(wsLink);
             }
-            line.append(coordsText);
+
+            line.append(Text.literal(" · ").formatted(Formatting.GRAY)).append(coordsLink);
 
             if (!dimension.isEmpty() && !dimension.equals(playerDimension)) {
                 line.append(Text.literal(" · " + dimension).formatted(Formatting.DARK_AQUA));
@@ -295,7 +367,7 @@ public final class PricebookCommand {
             return true;
         }
         Duration age = Duration.between(lastSeen, now).abs();
-        return age.toMinutes() >= 5;
+        return age.toMinutes() >= 60*24;
     }
 
     private static String formatCoordinates(BlockPos listingPos) {
@@ -306,11 +378,11 @@ public final class PricebookCommand {
     }
 
     private static String formatStock(int amount) {
-        return "(stock " + formatAmount(amount) + ")";
+        return "(qty " + formatAmount(amount) + ")";
     }
 
     private static String formatDemand(int amount) {
-        return "(needs " + formatAmount(amount) + ")";
+        return "(qtu " + formatAmount(amount) + ")";
     }
 
     private static String formatAmount(int amount) {
@@ -350,5 +422,12 @@ public final class PricebookCommand {
             case "minecraft:overworld", "overworld" -> "overworld";
             default -> raw;
         };
+    }
+
+    private static String sanitizeNameForCommand(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "Waystone";
+        }
+        return raw.replace('\n', ' ').replace('\r', ' ').trim();
     }
 }

@@ -158,7 +158,8 @@ public final class PricebookQueryService {
                     }
                 }
 
-                result.add(new Listing(owner, price, amount, position, dimension, lastSeenAt));
+                WaystoneReference waystone = parseWaystone(obj.get("nearestWaystone"));
+                result.add(new Listing(owner, price, amount, position, dimension, lastSeenAt, waystone));
             } catch (RuntimeException ignored) {
                 // Skip malformed listing entry
             }
@@ -175,6 +176,28 @@ public final class PricebookQueryService {
             return element.getAsDouble();
         } catch (RuntimeException ignored) {
             return 0;
+        }
+    }
+
+    private WaystoneReference parseWaystone(JsonElement element) {
+        if (element == null || element.isJsonNull() || !element.isJsonObject()) {
+            return null;
+        }
+        JsonObject obj = element.getAsJsonObject();
+        String name = getString(obj, "name");
+        int distanceSq = safeInt(obj, "distanceSq");
+
+        JsonArray posArray = obj.getAsJsonArray("position");
+        if (posArray == null || posArray.size() != 3) {
+            return null;
+        }
+        try {
+            int x = posArray.get(0).getAsInt();
+            int y = posArray.get(1).getAsInt();
+            int z = posArray.get(2).getAsInt();
+            return new WaystoneReference(name, new BlockPos(x, y, z), distanceSq);
+        } catch (RuntimeException ignored) {
+            return null;
         }
     }
 
@@ -276,6 +299,9 @@ public final class PricebookQueryService {
     }
 
     public record Listing(String owner, double price, int amount, BlockPos position,
-                          String dimension, Instant lastSeenAt) {
+                          String dimension, Instant lastSeenAt, WaystoneReference nearestWaystone) {
+    }
+
+    public record WaystoneReference(String name, BlockPos position, int distanceSq) {
     }
 }

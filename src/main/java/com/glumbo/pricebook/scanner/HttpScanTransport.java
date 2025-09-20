@@ -14,12 +14,10 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class HttpScanTransport {
@@ -37,7 +35,7 @@ public final class HttpScanTransport {
                 .build();
         this.baseUrl = config.apiBaseUrl();
         this.scansEndpoint = URI.create(baseUrl + "/api/scans");
-        this.waystoneEndpoint = URI.create(baseUrl + "/api/scan_waystone");
+        this.waystoneEndpoint = URI.create(baseUrl + "/api/scan-waystone");
     }
 
     public void sendScan(String senderId, String dimension, ChunkPos pos,
@@ -48,8 +46,7 @@ public final class HttpScanTransport {
             serverKnownChunks.add(coordinate);
         }
 
-        String scanId = UUID.randomUUID().toString();
-        String payload = encodePayload(senderId, scanId, dimension, pos, shops, waystones);
+        String payload = encodePayload(senderId, dimension, pos, shops, waystones);
 
         HttpRequest request = HttpRequest.newBuilder(scansEndpoint)
                 .timeout(Duration.ofSeconds(10))
@@ -59,7 +56,7 @@ public final class HttpScanTransport {
                 .build();
 
         httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
-                .whenComplete((response, throwable) -> handleSendResult(scanId, coordinate, empty, response, throwable));
+                .whenComplete((response, throwable) -> handleSendResult(coordinate, empty, response, throwable));
     }
 
     public void sendWaystoneScan(String senderId, String dimension, ChunkPos chunkPos, BlockPos position,
@@ -69,7 +66,6 @@ public final class HttpScanTransport {
         root.addProperty("dimension", dimension);
         root.addProperty("chunkX", chunkPos.x);
         root.addProperty("chunkZ", chunkPos.z);
-        root.addProperty("scannedAt", Instant.now().toString());
         root.addProperty("name", name);
         root.addProperty("owner", owner);
 
@@ -101,7 +97,7 @@ public final class HttpScanTransport {
         return serverKnownChunks.contains(new ChunkCoordinate(dimension, pos.x, pos.z));
     }
 
-    private void handleSendResult(String scanId, ChunkCoordinate coordinate, boolean empty,
+    private void handleSendResult(ChunkCoordinate coordinate, boolean empty,
                                   HttpResponse<String> response, Throwable throwable) {
         if (throwable != null) {
             return;
@@ -119,15 +115,13 @@ public final class HttpScanTransport {
 
     }
 
-    private String encodePayload(String senderId, String scanId, String dimension, ChunkPos pos,
+    private String encodePayload(String senderId, String dimension, ChunkPos pos,
                                   List<ShopSignParser.ShopEntry> shops, List<BlockPos> waystones) {
         JsonObject root = new JsonObject();
         root.addProperty("senderId", senderId);
-        root.addProperty("scanId", scanId);
         root.addProperty("dimension", dimension);
         root.addProperty("chunkX", pos.x);
         root.addProperty("chunkZ", pos.z);
-        root.addProperty("scannedAt", Instant.now().toString());
 
         JsonArray shopsJson = new JsonArray();
         for (ShopSignParser.ShopEntry entry : shops) {
@@ -152,11 +146,13 @@ public final class HttpScanTransport {
 
         JsonArray waystonesJson = new JsonArray();
         for (BlockPos waypoint : waystones) {
+            JsonObject element = new JsonObject();
             JsonArray position = new JsonArray();
             position.add(waypoint.getX());
             position.add(waypoint.getY());
             position.add(waypoint.getZ());
-            waystonesJson.add(position);
+            element.add("position", position);
+            waystonesJson.add(element);
         }
         root.add("waystones", waystonesJson);
         return root.toString();

@@ -134,6 +134,9 @@ public final class WaystoneTracker {
         }
         Text customName = head.get(DataComponentTypes.CUSTOM_NAME);
         String owner = customName != null ? customName.getString() : "Unknown";
+        if (owner.startsWith("Owner: ")) {
+            owner = owner.substring("Owner: ".length());
+        }
         owner = owner.trim();
         if (owner.isEmpty()) {
             owner = "Unknown";
