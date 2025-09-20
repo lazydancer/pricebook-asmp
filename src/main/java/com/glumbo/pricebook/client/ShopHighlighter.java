@@ -5,6 +5,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.block.BlockState;
+import net.minecraft.block.ShapeContext;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumer;
@@ -104,7 +105,7 @@ public final class ShopHighlighter {
         Box highlightBox = new Box(0, 0, 0, 1, 1, 1);
         BlockState state = world.getBlockState(targetPos);
         if (state != null && !state.isAir()) {
-            VoxelShape shape = state.getOutlineShape(world, targetPos);
+            VoxelShape shape = state.getOutlineShape(world, targetPos, ShapeContext.absent());
             if (!shape.isEmpty()) {
                 Box shapeBox = shape.getBoundingBox().expand(0.01);
                 if (shapeBox.getAverageSideLength() > 0) {

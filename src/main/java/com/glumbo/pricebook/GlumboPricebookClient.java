@@ -6,6 +6,7 @@ import com.glumbo.pricebook.command.PricebookQueryService;
 import com.glumbo.pricebook.config.ModConfig;
 import com.glumbo.pricebook.scanner.HttpScanTransport;
 import com.glumbo.pricebook.scanner.ShopScanner;
+import com.glumbo.pricebook.scanner.WaystoneTracker;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.MinecraftClient;
@@ -22,6 +23,7 @@ public final class GlumboPricebookClient implements ClientModInitializer {
     private static boolean enabled;
     private static PricebookQueryService queryService;
     private static List<String> itemCatalog = List.of();
+    private static WaystoneTracker waystoneTracker;
 
     @Override
     public void onInitializeClient() {
@@ -30,6 +32,8 @@ public final class GlumboPricebookClient implements ClientModInitializer {
         transport = new HttpScanTransport(config);
         scanner = new ShopScanner(config, transport);
         queryService = new PricebookQueryService(config);
+        waystoneTracker = new WaystoneTracker(config, transport);
+        waystoneTracker.init();
 
         registerEvents();
 
@@ -95,6 +99,9 @@ public final class GlumboPricebookClient implements ClientModInitializer {
         enabled = false;
         itemCatalog = List.of();
         ShopHighlighter.clear();
+        if (waystoneTracker != null) {
+            waystoneTracker.reset();
+        }
     }
 
     private static boolean shouldEnableForCurrentServer() {

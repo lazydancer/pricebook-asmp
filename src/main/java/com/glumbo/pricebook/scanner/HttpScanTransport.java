@@ -5,6 +5,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 
 import java.net.URI;
@@ -25,6 +26,7 @@ public final class HttpScanTransport {
     private final HttpClient httpClient;
     private final String baseUrl;
     private final URI scansEndpoint;
+    private final URI waystoneEndpoint;
     private final Set<ChunkCoordinate> serverKnownChunks = ConcurrentHashMap.newKeySet();
 
     public HttpScanTransport(ModConfig config) {
@@ -35,17 +37,19 @@ public final class HttpScanTransport {
                 .build();
         this.baseUrl = config.apiBaseUrl();
         this.scansEndpoint = URI.create(baseUrl + "/api/scans");
+        this.waystoneEndpoint = URI.create(baseUrl + "/api/scan_waystone");
     }
 
-    public void sendScan(String senderId, String dimension, ChunkPos pos, List<ShopSignParser.ShopEntry> shops) {
+    public void sendScan(String senderId, String dimension, ChunkPos pos,
+                         List<ShopSignParser.ShopEntry> shops, List<BlockPos> waystones) {
         ChunkCoordinate coordinate = new ChunkCoordinate(dimension, pos.x, pos.z);
-        boolean empty = shops.isEmpty();
+        boolean empty = shops.isEmpty() && waystones.isEmpty();
         if (!empty) {
             serverKnownChunks.add(coordinate);
         }
 
         String scanId = UUID.randomUUID().toString();
-        String payload = encodePayload(senderId, scanId, dimension, pos, shops);
+        String payload = encodePayload(senderId, scanId, dimension, pos, shops, waystones);
 
         HttpRequest request = HttpRequest.newBuilder(scansEndpoint)
                 .timeout(Duration.ofSeconds(10))
@@ -56,6 +60,33 @@ public final class HttpScanTransport {
 
         httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
                 .whenComplete((response, throwable) -> handleSendResult(scanId, coordinate, empty, response, throwable));
+    }
+
+    public void sendWaystoneScan(String senderId, String dimension, ChunkPos chunkPos, BlockPos position,
+                                 String name, String owner) {
+        JsonObject root = new JsonObject();
+        root.addProperty("senderId", senderId);
+        root.addProperty("dimension", dimension);
+        root.addProperty("chunkX", chunkPos.x);
+        root.addProperty("chunkZ", chunkPos.z);
+        root.addProperty("scannedAt", Instant.now().toString());
+        root.addProperty("name", name);
+        root.addProperty("owner", owner);
+
+        JsonArray coords = new JsonArray();
+        coords.add(position.getX());
+        coords.add(position.getY());
+        coords.add(position.getZ());
+        root.add("position", coords);
+
+        HttpRequest request = HttpRequest.newBuilder(waystoneEndpoint)
+                .timeout(Duration.ofSeconds(10))
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(root.toString(), StandardCharsets.UTF_8))
+                .build();
+
+        httpClient.sendAsync(request, HttpResponse.BodyHandlers.discarding());
     }
 
     public void bootstrap() {
@@ -89,7 +120,7 @@ public final class HttpScanTransport {
     }
 
     private String encodePayload(String senderId, String scanId, String dimension, ChunkPos pos,
-                                  List<ShopSignParser.ShopEntry> shops) {
+                                  List<ShopSignParser.ShopEntry> shops, List<BlockPos> waystones) {
         JsonObject root = new JsonObject();
         root.addProperty("senderId", senderId);
         root.addProperty("scanId", scanId);
@@ -118,6 +149,16 @@ public final class HttpScanTransport {
         }
 
         root.add("shops", shopsJson);
+
+        JsonArray waystonesJson = new JsonArray();
+        for (BlockPos waypoint : waystones) {
+            JsonArray position = new JsonArray();
+            position.add(waypoint.getX());
+            position.add(waypoint.getY());
+            position.add(waypoint.getZ());
+            waystonesJson.add(position);
+        }
+        root.add("waystones", waystonesJson);
         return root.toString();
     }
 

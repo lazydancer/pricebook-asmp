@@ -3,17 +3,23 @@ package com.glumbo.pricebook.scanner;
 import com.glumbo.pricebook.config.ModConfig;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import net.minecraft.block.Block;
+import net.minecraft.block.Blocks;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.BlockPos.Mutable;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.World;
 import net.minecraft.world.chunk.WorldChunk;
 
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -28,9 +34,16 @@ public final class ShopScanner {
             .thenComparingInt(entry -> entry.position().getZ())
             .thenComparing(ShopSignParser.ShopEntry::action);
 
+    private static final Comparator<BlockPos> BLOCK_POS_ORDER = Comparator
+            .comparingInt(BlockPos::getX)
+            .thenComparingInt(BlockPos::getY)
+            .thenComparingInt(BlockPos::getZ);
+
+    private static final Map<Block, List<WaystonePattern>> WAYSTONE_PATTERNS = createWaystonePatterns();
+
     private final ModConfig config;
     private final HttpScanTransport transport;
-    private final Long2ObjectMap<Set<ShopSignParser.ShopEntry>> lastKnownShops = new Long2ObjectOpenHashMap<>();
+    private final Long2ObjectMap<ChunkSnapshot> lastKnownChunks = new Long2ObjectOpenHashMap<>();
 
     public ShopScanner(ModConfig config, HttpScanTransport transport) {
         this.config = Objects.requireNonNull(config, "config");
@@ -59,32 +72,41 @@ public final class ShopScanner {
         ChunkPos pos = chunk.getPos();
         long key = pos.toLong();
 
-        Set<ShopSignParser.ShopEntry> current = collectShops(world, chunk);
-        Set<ShopSignParser.ShopEntry> previous = lastKnownShops.get(key);
+        Set<ShopSignParser.ShopEntry> currentShops = collectShops(world, chunk);
+        Set<BlockPos> currentWaystones = config.trackWaystones()
+                ? collectWaystones(world, chunk)
+                : Set.of();
+
+        ChunkSnapshot previous = lastKnownChunks.get(key);
+        ChunkSnapshot current = new ChunkSnapshot(Set.copyOf(currentShops), Set.copyOf(currentWaystones));
         if (previous != null && previous.equals(current)) {
             return;
         }
 
-        lastKnownShops.put(key, Set.copyOf(current));
+        lastKnownChunks.put(key, current);
 
-        List<ShopSignParser.ShopEntry> sorted = current.stream()
+        List<ShopSignParser.ShopEntry> sorted = currentShops.stream()
                 .sorted(ENTRY_ORDER)
+                .collect(Collectors.toList());
+        List<BlockPos> waystones = currentWaystones.stream()
+                .sorted(BLOCK_POS_ORDER)
                 .collect(Collectors.toList());
 
         String dimension = lookupDimension(world);
-        if (sorted.isEmpty() && !transport.shouldTransmitEmpty(dimension, pos)) {
+        boolean empty = sorted.isEmpty() && waystones.isEmpty();
+        if (empty && !transport.shouldTransmitEmpty(dimension, pos)) {
             return;
         }
 
-        transport.sendScan(config.senderId, dimension, pos, sorted);
+        transport.sendScan(config.senderId, dimension, pos, sorted, waystones);
     }
 
     public void forgetChunk(ChunkPos pos) {
-        lastKnownShops.remove(pos.toLong());
+        lastKnownChunks.remove(pos.toLong());
     }
 
     public void reset() {
-        lastKnownShops.clear();
+        lastKnownChunks.clear();
     }
 
     private Set<ShopSignParser.ShopEntry> collectShops(ClientWorld world, WorldChunk chunk) {
@@ -106,6 +128,37 @@ public final class ShopScanner {
         return Optional.empty();
     }
 
+    private Set<BlockPos> collectWaystones(ClientWorld world, WorldChunk chunk) {
+        Set<BlockPos> positions = new HashSet<>();
+        ChunkPos chunkPos = chunk.getPos();
+        Mutable bottomPos = new Mutable();
+        Mutable topPos = new Mutable();
+        int minY = world.getBottomY();
+        int maxY = minY + world.getHeight() - 1;
+
+        for (int localX = 0; localX < 16; localX++) {
+            int worldX = chunkPos.getStartX() + localX;
+            for (int localZ = 0; localZ < 16; localZ++) {
+                int worldZ = chunkPos.getStartZ() + localZ;
+                for (int y = minY; y < maxY; y++) {
+                    bottomPos.set(worldX, y, worldZ);
+                    Block bottomBlock = chunk.getBlockState(bottomPos).getBlock();
+                    List<WaystonePattern> patterns = WAYSTONE_PATTERNS.get(bottomBlock);
+                    if (patterns == null || patterns.isEmpty()) {
+                        continue;
+                    }
+
+                    topPos.set(worldX, y + 1, worldZ);
+                    Block topBlock = chunk.getBlockState(topPos).getBlock();
+                    if (isWaystonePair(topBlock, bottomBlock)) {
+                        positions.add(topPos.toImmutable());
+                    }
+                }
+            }
+        }
+        return positions;
+    }
+
     private static String lookupDimension(World world) {
         RegistryKey<World> key = world.getRegistryKey();
         Identifier id = key.getValue();
@@ -114,5 +167,42 @@ public final class ShopScanner {
             case "minecraft:the_end" -> "end";
             default -> "overworld";
         };
+    }
+
+    private static Map<Block, List<WaystonePattern>> createWaystonePatterns() {
+        Map<Block, List<WaystonePattern>> mapping = new HashMap<>();
+        addPattern(mapping, Blocks.LODESTONE, Blocks.SMOOTH_STONE_SLAB);
+        addPattern(mapping, Blocks.WAXED_WEATHERED_CHISELED_COPPER, Blocks.WAXED_WEATHERED_CUT_COPPER_SLAB);
+        addPattern(mapping, Blocks.RED_MUSHROOM_BLOCK, Blocks.SMOOTH_QUARTZ_SLAB);
+        addPattern(mapping, Blocks.CHISELED_RESIN_BRICKS, Blocks.RESIN_BRICK_SLAB);
+        addPattern(mapping, Blocks.WAXED_OXIDIZED_CHISELED_COPPER, Blocks.WAXED_OXIDIZED_CUT_COPPER_SLAB);
+        addPattern(mapping, Blocks.CHISELED_POLISHED_BLACKSTONE, Blocks.POLISHED_BLACKSTONE_BRICK_SLAB);
+        addPattern(mapping, Blocks.WAXED_CHISELED_COPPER, Blocks.WAXED_CUT_COPPER_SLAB);
+        addPattern(mapping, Blocks.BROWN_MUSHROOM_BLOCK, Blocks.SMOOTH_QUARTZ_SLAB);
+        addPattern(mapping, Blocks.WAXED_EXPOSED_CHISELED_COPPER, Blocks.WAXED_EXPOSED_CUT_COPPER_SLAB);
+        return mapping;
+    }
+
+    private static void addPattern(Map<Block, List<WaystonePattern>> mapping, Block top, Block bottom) {
+        mapping.computeIfAbsent(bottom, key -> new ArrayList<>()).add(new WaystonePattern(top));
+    }
+
+    static boolean isWaystonePair(Block top, Block bottom) {
+        List<WaystonePattern> patterns = WAYSTONE_PATTERNS.get(bottom);
+        if (patterns == null) {
+            return false;
+        }
+        for (WaystonePattern pattern : patterns) {
+            if (pattern.top() == top) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private record WaystonePattern(Block top) {
+    }
+
+    private record ChunkSnapshot(Set<ShopSignParser.ShopEntry> shops, Set<BlockPos> waystones) {
     }
 }
