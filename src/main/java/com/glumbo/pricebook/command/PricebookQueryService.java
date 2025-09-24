@@ -41,7 +41,7 @@ public final class PricebookQueryService {
         }
 
         String encoded = URLEncoder.encode(trimmed, StandardCharsets.UTF_8);
-        URI uri = URI.create(baseUrl + "/api/item?item=" + encoded);
+        URI uri = URI.create(baseUrl + "/v1/item?item=" + encoded);
 
         HttpRequest request = HttpRequest.newBuilder(uri)
                 .timeout(Duration.ofSeconds(8))
@@ -55,7 +55,7 @@ public final class PricebookQueryService {
     }
 
     public CompletableFuture<List<String>> fetchCatalog() {
-        URI uri = URI.create(baseUrl + "/api/items");
+        URI uri = URI.create(baseUrl + "/v1/items");
 
         HttpRequest request = HttpRequest.newBuilder(uri)
                 .timeout(Duration.ofSeconds(10))

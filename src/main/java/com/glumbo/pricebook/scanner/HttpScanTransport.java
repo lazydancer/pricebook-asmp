@@ -23,7 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class HttpScanTransport {
     private final HttpClient httpClient;
     private final String baseUrl;
-    private final URI scansEndpoint;
+    private final URI scanEndpoint;
     private final URI waystoneEndpoint;
     private final Set<ChunkCoordinate> serverKnownChunks = ConcurrentHashMap.newKeySet();
 
@@ -34,8 +34,8 @@ public final class HttpScanTransport {
                 .version(HttpClient.Version.HTTP_1_1)
                 .build();
         this.baseUrl = config.apiBaseUrl();
-        this.scansEndpoint = URI.create(baseUrl + "/api/scans");
-        this.waystoneEndpoint = URI.create(baseUrl + "/api/scan-waystone");
+        this.scanEndpoint = URI.create(baseUrl + "/v1/scan");
+        this.waystoneEndpoint = URI.create(baseUrl + "/v1/scan-waystone");
     }
 
     public void sendScan(String senderId, String dimension, ChunkPos pos,
@@ -48,7 +48,7 @@ public final class HttpScanTransport {
 
         String payload = encodePayload(senderId, dimension, pos, shops, waystones);
 
-        HttpRequest request = HttpRequest.newBuilder(scansEndpoint)
+        HttpRequest request = HttpRequest.newBuilder(scanEndpoint)
                 .timeout(Duration.ofSeconds(10))
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/json")
@@ -159,7 +159,7 @@ public final class HttpScanTransport {
     }
 
     private void fetchChunksPage() {
-        URI uri = URI.create(baseUrl + "/api/chunks");
+        URI uri = URI.create(baseUrl + "/v1/chunks");
         HttpRequest request = HttpRequest.newBuilder(uri)
                 .timeout(Duration.ofSeconds(10))
                 .header("Accept", "application/json")
