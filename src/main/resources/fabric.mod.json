@@ -8,7 +8,7 @@
 		"ASMP Tools"
 	],
 	"contact": {
-		"sources": "https://github.com/asmp/pricebook"
+		"sources": "https://github.com/lazydancer/pricebook-asmp"
 	},
 	"license": "CC0-1.0",
 	"icon": "assets/pricebook-asmp/icon.png",
