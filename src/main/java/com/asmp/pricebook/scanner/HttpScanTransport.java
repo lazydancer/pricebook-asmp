@@ -1,6 +1,6 @@
-package com.glumbo.pricebook.scanner;
+package com.asmp.pricebook.scanner;
 
-import com.glumbo.pricebook.config.ModConfig;
+import com.asmp.pricebook.config.ModConfig;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;

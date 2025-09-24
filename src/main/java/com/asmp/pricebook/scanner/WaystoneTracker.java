@@ -1,6 +1,6 @@
-package com.glumbo.pricebook.scanner;
+package com.asmp.pricebook.scanner;
 
-import com.glumbo.pricebook.config.ModConfig;
+import com.asmp.pricebook.config.ModConfig;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.block.BlockState;
 import net.minecraft.client.MinecraftClient;

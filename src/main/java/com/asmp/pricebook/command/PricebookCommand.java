@@ -1,11 +1,11 @@
-package com.glumbo.pricebook.command;
+package com.asmp.pricebook.command;
 
-import com.glumbo.pricebook.GlumboPricebookClient;
-import com.glumbo.pricebook.command.PricebookQueryService.ItemInfo;
-import com.glumbo.pricebook.command.PricebookQueryService.ItemLookupResult;
-import com.glumbo.pricebook.command.PricebookQueryService.Listing;
-import com.glumbo.pricebook.command.PricebookQueryService.WaystoneReference;
-import com.glumbo.pricebook.integration.WaypointHelper;
+import com.asmp.pricebook.PricebookClient;
+import com.asmp.pricebook.command.PricebookQueryService.ItemInfo;
+import com.asmp.pricebook.command.PricebookQueryService.ItemLookupResult;
+import com.asmp.pricebook.command.PricebookQueryService.Listing;
+import com.asmp.pricebook.command.PricebookQueryService.WaystoneReference;
+import com.asmp.pricebook.integration.WaypointHelper;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
@@ -89,12 +89,12 @@ public final class PricebookCommand {
 
         WaypointHelper.clear(); // Always clear the waypoint when running command
 
-        if (!GlumboPricebookClient.isEnabled()) {
+        if (!PricebookClient.isEnabled()) {
             player.sendMessage(Text.literal("[Pricebook] Not connected to asmp.cc.").formatted(Formatting.RED), false);
             return 1;
         }
 
-        PricebookQueryService service = GlumboPricebookClient.pricebookQueryService();
+        PricebookQueryService service = PricebookClient.pricebookQueryService();
         if (service == null) {
             player.sendMessage(Text.literal("[Pricebook] Query service not available.").formatted(Formatting.RED), false);
             return 1;
@@ -131,7 +131,7 @@ public final class PricebookCommand {
 
     private static CompletableFuture<Suggestions> suggestItems(CommandContext<FabricClientCommandSource> context,
                                                                SuggestionsBuilder builder) {
-        List<String> catalog = GlumboPricebookClient.itemCatalog();
+        List<String> catalog = PricebookClient.itemCatalog();
         if (catalog == null || catalog.isEmpty()) {
             return builder.buildFuture();
         }

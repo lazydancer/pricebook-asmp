@@ -1,12 +1,12 @@
-package com.glumbo.pricebook;
+package com.asmp.pricebook;
 
-import com.glumbo.pricebook.command.PricebookCommand;
-import com.glumbo.pricebook.command.PricebookQueryService;
-import com.glumbo.pricebook.config.ModConfig;
-import com.glumbo.pricebook.integration.WaypointHelper;
-import com.glumbo.pricebook.scanner.HttpScanTransport;
-import com.glumbo.pricebook.scanner.ShopScanner;
-import com.glumbo.pricebook.scanner.WaystoneTracker;
+import com.asmp.pricebook.command.PricebookCommand;
+import com.asmp.pricebook.command.PricebookQueryService;
+import com.asmp.pricebook.config.ModConfig;
+import com.asmp.pricebook.integration.WaypointHelper;
+import com.asmp.pricebook.scanner.HttpScanTransport;
+import com.asmp.pricebook.scanner.ShopScanner;
+import com.asmp.pricebook.scanner.WaystoneTracker;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.MinecraftClient;
@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 
-public final class GlumboPricebookClient implements ClientModInitializer {
+public final class PricebookClient implements ClientModInitializer {
     private static ShopScanner scanner;
     private static HttpScanTransport transport;
     private static ModConfig config;

@@ -1,6 +1,6 @@
-package com.glumbo.pricebook.scanner;
+package com.asmp.pricebook.scanner;
 
-import com.glumbo.pricebook.config.ModConfig;
+import com.asmp.pricebook.config.ModConfig;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import net.minecraft.block.Block;

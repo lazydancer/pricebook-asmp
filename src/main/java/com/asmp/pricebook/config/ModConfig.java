@@ -1,4 +1,4 @@
-package com.glumbo.pricebook.config;
+package com.asmp.pricebook.config;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -17,7 +17,7 @@ import java.util.UUID;
 
 public final class ModConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final String CONFIG_FILE_NAME = "glumbo-pricebook.json";
+    private static final String CONFIG_FILE_NAME = "pricebook-asmp.json";
 
     public boolean trackShops = true;
     public String senderId = "";

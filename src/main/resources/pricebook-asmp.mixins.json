@@ -1,6 +1,6 @@
 {
 	"required": true,
-	"package": "com.glumbo.pricebook.mixin",
+	"package": "com.asmp.pricebook.mixin",
 	"compatibilityLevel": "JAVA_21",
 	"mixins": [
 		"ClientPlayNetworkHandlerMixin"

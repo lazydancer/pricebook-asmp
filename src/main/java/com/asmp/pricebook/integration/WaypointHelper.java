@@ -1,4 +1,4 @@
-package com.glumbo.pricebook.integration;
+package com.asmp.pricebook.integration;
 
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
@@ -134,7 +134,7 @@ public final class WaypointHelper {
             context.fill(x - padding, y - padding, x + tw + padding, y + th + padding, bg);
             context.drawText(tr, line, x, y, 0xFFFFFFFF, true);
         };
-        HudElementRegistry.attachElementAfter(VanillaHudElements.MISC_OVERLAYS, Identifier.of("glumbo-pricebook", "waypoint_label"), element);
+        HudElementRegistry.attachElementAfter(VanillaHudElements.MISC_OVERLAYS, Identifier.of("pricebook-asmp", "waypoint_label"), element);
     }
 
     private static void registerAutoClearNearGoal() {

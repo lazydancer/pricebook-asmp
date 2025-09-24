@@ -1,25 +1,25 @@
 {
 	"schemaVersion": 1,
-	"id": "glumbo-pricebook",
+	"id": "pricebook-asmp",
 	"version": "${version}",
-	"name": "Glumbo Pricebook",
-	"description": "Scans shop signs and publishes observations to the Glumbo pricebook backend.",
+	"name": "Pricebook ASMP",
+	"description": "Scans shop signs and publishes observations to the pricebook ASMP backend.",
 	"authors": [
-		"Glumbo Tools"
+		"ASMP Tools"
 	],
 	"contact": {
-		"sources": "https://github.com/glumbo/pricebook"
+		"sources": "https://github.com/asmp/pricebook"
 	},
 	"license": "CC0-1.0",
-	"icon": "assets/glumbo-pricebook/icon.png",
+	"icon": "assets/pricebook-asmp/icon.png",
 	"environment": "*",
 	"entrypoints": {
 		"client": [
-			"com.glumbo.pricebook.GlumboPricebookClient"
+			"com.asmp.pricebook.PricebookClient"
 		]
 	},
 	"mixins": [
-		"glumbo-pricebook.mixins.json"
+		"pricebook-asmp.mixins.json"
 	],
 	"depends": {
 		"fabricloader": ">=0.16.14",

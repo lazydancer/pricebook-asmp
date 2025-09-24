@@ -1,4 +1,4 @@
-package com.glumbo.pricebook.scanner;
+package com.asmp.pricebook.scanner;
 
 import net.minecraft.block.BlockState;
 import net.minecraft.block.SignBlock;
