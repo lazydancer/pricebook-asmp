@@ -20,7 +20,7 @@ public final class ModConfig {
     private static final String CONFIG_FILE_NAME = "pricebook-asmp.json";
 
     public String senderId = "";
-    public String apiBaseUrl = "http://localhost:49876";
+    public String apiBaseUrl = "https://pricebook-asmp-server.fly.dev";
 
     public static ModConfig load() {
         Path configDir = FabricLoader.getInstance().getConfigDir();

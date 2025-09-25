@@ -20,7 +20,7 @@ A player-friendly companion mod for the asmp.cc Minecraft server. Pricebook ASMP
 > Tip: The shorter alias `/pb` works exactly the same, so you can type `/pb rockets` in a hurry.
 
 ## Quick Start (Installation)
-1. Install Fabric Loader for Minecraft 1.21.7 and the Fabric API (they’re required by most ASMP mods).
+1. Install Fabric Loader for Minecraft 1.21.7 or 1.21.8 and the matching Fabric API (they’re required by most ASMP mods).
 2. Drop the latest `pricebook-asmp-<version>.jar` into your Minecraft `mods/` folder.
 3. Launch the Fabric profile and hop onto `asmp.cc`. The mod enables itself automatically once you connect.
 
@@ -33,4 +33,3 @@ A player-friendly companion mod for the asmp.cc Minecraft server. Pricebook ASMP
 - **Does it share my coordinates all the time?** Only when a shop sign or waystone is detected in a chunk you loaded, and only to the pricebook database.
 - **Will it lag my client?** Scanning is lightweight and only happens as chunks stream in.
 - **Can I use it on other servers?** It politely stays dormant unless the server address matches `asmp.cc`.
-
