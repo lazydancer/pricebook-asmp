@@ -1,6 +1,6 @@
 package com.asmp.pricebook.mixin;
 
-import com.asmp.pricebook.PricebookClient;
+import com.asmp.pricebook.Pricebook;
 import com.asmp.pricebook.scanner.ShopScanner;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.client.world.ClientWorld;
@@ -21,8 +21,8 @@ public abstract class ClientPlayNetworkHandlerMixin {
 
     @Inject(method = "onChunkData", at = @At("TAIL"))
     private void glumbo$scanChunk(ChunkDataS2CPacket packet, CallbackInfo ci) {
-        ShopScanner scanner = PricebookClient.scanner();
-        if (scanner == null || world == null || !PricebookClient.isEnabled()) {
+        ShopScanner scanner = Pricebook.scanner();
+        if (scanner == null || world == null || !Pricebook.isEnabled()) {
             return;
         }
 
@@ -37,12 +37,12 @@ public abstract class ClientPlayNetworkHandlerMixin {
 
     @Inject(method = "onGameJoin", at = @At("TAIL"))
     private void glumbo$resetScanner(GameJoinS2CPacket packet, CallbackInfo ci) {
-        PricebookClient.onMultiplayerJoin();
+        Pricebook.onMultiplayerJoin();
     }
 
     @Inject(method = "onUnloadChunk", at = @At("TAIL"))
     private void glumbo$forgetChunk(UnloadChunkS2CPacket packet, CallbackInfo ci) {
-        ShopScanner scanner = PricebookClient.scanner();
+        ShopScanner scanner = Pricebook.scanner();
         if (scanner == null) {
             return;
         }

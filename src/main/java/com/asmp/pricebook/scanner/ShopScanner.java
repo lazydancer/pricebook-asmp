@@ -1,13 +1,12 @@
 package com.asmp.pricebook.scanner;
 
 import com.asmp.pricebook.config.ModConfig;
+import com.asmp.pricebook.util.Dimensions;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import net.minecraft.block.Block;
 import net.minecraft.block.Blocks;
 import net.minecraft.client.world.ClientWorld;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.BlockPos.Mutable;
 import net.minecraft.util.math.ChunkPos;
@@ -92,7 +91,7 @@ public final class ShopScanner {
                 .sorted(BLOCK_POS_ORDER)
                 .collect(Collectors.toList());
 
-        String dimension = lookupDimension(world);
+        String dimension = Dimensions.canonical(world);
         boolean empty = sorted.isEmpty() && waystones.isEmpty();
         if (empty && !transport.shouldTransmitEmpty(dimension, pos)) {
             return;
@@ -157,16 +156,6 @@ public final class ShopScanner {
             }
         }
         return positions;
-    }
-
-    private static String lookupDimension(World world) {
-        RegistryKey<World> key = world.getRegistryKey();
-        Identifier id = key.getValue();
-        return switch (id.toString()) {
-            case "minecraft:the_nether" -> "nether";
-            case "minecraft:the_end" -> "end";
-            default -> "overworld";
-        };
     }
 
     private static Map<Block, List<WaystonePattern>> createWaystonePatterns() {

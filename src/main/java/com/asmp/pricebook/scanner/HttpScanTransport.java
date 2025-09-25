@@ -1,6 +1,7 @@
 package com.asmp.pricebook.scanner;
 
 import com.asmp.pricebook.config.ModConfig;
+import com.asmp.pricebook.util.HttpClients;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -29,10 +30,7 @@ public final class HttpScanTransport {
 
     public HttpScanTransport(ModConfig config) {
         Objects.requireNonNull(config, "config");
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(5))
-                .version(HttpClient.Version.HTTP_1_1)
-                .build();
+        this.httpClient = HttpClients.shared();
         this.baseUrl = config.apiBaseUrl();
         this.scanEndpoint = URI.create(baseUrl + "/v1/scan");
         this.waystoneEndpoint = URI.create(baseUrl + "/v1/scan-waystone");

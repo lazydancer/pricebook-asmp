@@ -1,11 +1,13 @@
 package com.asmp.pricebook.command;
 
-import com.asmp.pricebook.PricebookClient;
+import com.asmp.pricebook.Pricebook;
 import com.asmp.pricebook.command.PricebookQueryService.ItemInfo;
 import com.asmp.pricebook.command.PricebookQueryService.ItemLookupResult;
 import com.asmp.pricebook.command.PricebookQueryService.Listing;
 import com.asmp.pricebook.command.PricebookQueryService.WaystoneReference;
-import com.asmp.pricebook.integration.WaypointHelper;
+import com.asmp.pricebook.util.Dimensions;
+import com.asmp.pricebook.waypoint.WaypointManager;
+import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
@@ -24,7 +26,6 @@ import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
 
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
@@ -49,31 +50,33 @@ public final class PricebookCommand {
 
     public static void register() {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
-            dispatcher.register(ClientCommandManager.literal("pricebook")
-                    .executes(ctx -> execute(ctx.getSource(), null))
-                    .then(ClientCommandManager.argument("item", StringArgumentType.greedyString())
-                            .suggests(PricebookCommand::suggestItems)
-                            .executes(ctx -> execute(ctx.getSource(), StringArgumentType.getString(ctx, "item")))));
-
-            dispatcher.register(ClientCommandManager.literal("pb")
-                    .executes(ctx -> execute(ctx.getSource(), null))
-                    .then(ClientCommandManager.argument("item", StringArgumentType.greedyString())
-                            .suggests(PricebookCommand::suggestItems)
-                            .executes(ctx -> execute(ctx.getSource(), StringArgumentType.getString(ctx, "item")))));
-
-            dispatcher.register(ClientCommandManager.literal(WAYPOINT_COMMAND_NAME)
-                    .then(ClientCommandManager.argument("x", IntegerArgumentType.integer())
-                            .then(ClientCommandManager.argument("y", IntegerArgumentType.integer())
-                                    .then(ClientCommandManager.argument("z", IntegerArgumentType.integer())
-                                            .then(ClientCommandManager.argument("dimension", StringArgumentType.word())
-                                                    .then(ClientCommandManager.argument("name", StringArgumentType.greedyString())
-                                                            .executes(ctx -> createWaypoint(ctx.getSource(),
-                                                                    IntegerArgumentType.getInteger(ctx, "x"),
-                                                                    IntegerArgumentType.getInteger(ctx, "y"),
-                                                                    IntegerArgumentType.getInteger(ctx, "z"),
-                                                                    StringArgumentType.getString(ctx, "dimension"),
-                                                                    StringArgumentType.getString(ctx, "name")))))))));
+            registerPricebookCommand(dispatcher, "pricebook");
+            registerPricebookCommand(dispatcher, "pb");
+            registerWaypointCommand(dispatcher);
         });
+    }
+
+    private static void registerPricebookCommand(CommandDispatcher<FabricClientCommandSource> dispatcher, String alias) {
+        dispatcher.register(ClientCommandManager.literal(alias)
+                .executes(ctx -> execute(ctx.getSource(), null))
+                .then(ClientCommandManager.argument("item", StringArgumentType.greedyString())
+                        .suggests(PricebookCommand::suggestItems)
+                        .executes(ctx -> execute(ctx.getSource(), StringArgumentType.getString(ctx, "item")))));
+    }
+
+    private static void registerWaypointCommand(CommandDispatcher<FabricClientCommandSource> dispatcher) {
+        dispatcher.register(ClientCommandManager.literal(WAYPOINT_COMMAND_NAME)
+                .then(ClientCommandManager.argument("x", IntegerArgumentType.integer())
+                        .then(ClientCommandManager.argument("y", IntegerArgumentType.integer())
+                                .then(ClientCommandManager.argument("z", IntegerArgumentType.integer())
+                                        .then(ClientCommandManager.argument("dimension", StringArgumentType.word())
+                                                .then(ClientCommandManager.argument("name", StringArgumentType.greedyString())
+                                                        .executes(ctx -> createWaypoint(ctx.getSource(),
+                                                                IntegerArgumentType.getInteger(ctx, "x"),
+                                                                IntegerArgumentType.getInteger(ctx, "y"),
+                                                                IntegerArgumentType.getInteger(ctx, "z"),
+                                                                StringArgumentType.getString(ctx, "dimension"),
+                                                                StringArgumentType.getString(ctx, "name")))))))));
     }
 
     private static int execute(FabricClientCommandSource source, String itemName) {
@@ -87,22 +90,22 @@ public final class PricebookCommand {
             return 0;
         }
 
-        WaypointHelper.clear(); // Always clear the waypoint when running command
+        WaypointManager.clear(); // Always clear the waypoint when running command
 
-        if (!PricebookClient.isEnabled()) {
-            player.sendMessage(Text.literal("[Pricebook] Not connected to asmp.cc.").formatted(Formatting.RED), false);
+        if (!Pricebook.isEnabled()) {
+            player.sendMessage(prefixed("Not connected to asmp.cc.", Formatting.RED), false);
             return 1;
         }
 
-        PricebookQueryService service = PricebookClient.pricebookQueryService();
+        PricebookQueryService service = Pricebook.queryService();
         if (service == null) {
-            player.sendMessage(Text.literal("[Pricebook] Query service not available.").formatted(Formatting.RED), false);
+            player.sendMessage(prefixed("Query service not available.", Formatting.RED), false);
             return 1;
         }
 
         String resolved = resolveItemName(player, itemName);
         if (resolved == null || resolved.isBlank()) {
-            player.sendMessage(Text.literal("[Pricebook] Hold an item or specify a name.").formatted(Formatting.RED), false);
+            player.sendMessage(prefixed("Hold an item or specify a name.", Formatting.RED), false);
             return 1;
         }
 
@@ -131,7 +134,7 @@ public final class PricebookCommand {
 
     private static CompletableFuture<Suggestions> suggestItems(CommandContext<FabricClientCommandSource> context,
                                                                SuggestionsBuilder builder) {
-        List<String> catalog = PricebookClient.itemCatalog();
+        List<String> catalog = Pricebook.itemCatalog();
         if (catalog == null || catalog.isEmpty()) {
             return builder.buildFuture();
         }
@@ -150,22 +153,23 @@ public final class PricebookCommand {
             return 0;
         }
 
-        String dimension = normalizeDimension(dimensionArg);
-        if (dimension.isEmpty() || dimension.equals("_")) {
-            dimension = dimensionName(player.getWorld());
+        String dimension;
+        if (dimensionArg == null || dimensionArg.isBlank() || "_".equals(dimensionArg)) {
+            dimension = Dimensions.canonical(player.getWorld());
+        } else {
+            dimension = Dimensions.canonical(dimensionArg);
         }
 
         BlockPos pos = new BlockPos(x, y, z);
-        boolean success = WaypointHelper.createWaypoint(pos, dimension, name);
+        boolean success = WaypointManager.createWaypoint(pos, dimension, name);
         if (success) {
-            player.sendMessage(Text.literal(String.format(Locale.ROOT,
-                    "[Pricebook] Created waypoint '%s'. Run /pb again to clear",
-                    name == null || name.isBlank() ? "Waystone" : name)).formatted(Formatting.AQUA), false);
+            String displayName = name == null || name.isBlank() ? "Waystone" : name;
+            String message = String.format(Locale.ROOT, "Created waypoint '%s'. Run /pb again to clear", displayName);
+            player.sendMessage(prefixed(message, Formatting.AQUA), false);
             return 1;
         }
 
-        player.sendMessage(Text.literal("[Pricebook] Unable to create waypoint."
-        ).formatted(Formatting.RED), false);
+        player.sendMessage(prefixed("Unable to create waypoint.", Formatting.RED), false);
         return 0;
     }
 
@@ -177,19 +181,19 @@ public final class PricebookCommand {
         }
 
         if (result == null) {
-            player.sendMessage(Text.literal("[Pricebook] No response.").formatted(Formatting.RED), false);
+            player.sendMessage(prefixed("No response.", Formatting.RED), false);
             return;
         }
 
         if (!result.isSuccess()) {
             String message = Objects.requireNonNullElse(result.error(), "Unknown error.");
-            player.sendMessage(Text.literal("[Pricebook] " + message).formatted(Formatting.RED), false);
+            player.sendMessage(prefixed(message, Formatting.RED), false);
             return;
         }
 
         ItemInfo info = result.info();
         if (info == null) {
-            player.sendMessage(Text.literal("[Pricebook] Unknown error.").formatted(Formatting.RED), false);
+            player.sendMessage(prefixed("Unknown error.", Formatting.RED), false);
             return;
         }
 
@@ -226,82 +230,16 @@ public final class PricebookCommand {
 
         player.sendMessage(Text.literal(title).formatted(Formatting.AQUA), false);
 
-        String playerDimension = dimensionName(player.getWorld());
+        String playerDimension = Dimensions.canonical(player.getWorld());
         Instant now = Instant.now();
 
         int limit = Math.min(3, entries.size());
         for (int i = 0; i < limit; i++) {
             Listing listing = entries.get(i);
-            String owner = listing.owner() == null || listing.owner().isBlank() ? "Unknown" : listing.owner();
-
-            String priceStr = PRICE_FORMAT.format(listing.price());
-            int amount = Math.max(0, listing.amount());
-
-            final Text separator = Text.literal(" · ").formatted(Formatting.DARK_GRAY);
-
-            MutableText line = Text.literal(String.format(Locale.ROOT, " %d ", i + 1)).formatted(Formatting.DARK_GRAY);
-            line.append(separator).append(Text.literal(priceStr).formatted(Formatting.AQUA));
-
-            MutableText quantityPart = Text.literal("[").formatted(Formatting.GRAY)
-                    .append(Text.literal(String.valueOf(amount)).formatted(Formatting.AQUA))
-                    .append(Text.literal("]").formatted(Formatting.GRAY));
-            line.append(separator).append(quantityPart);
-
-            line.append(separator).append(Text.literal(owner).formatted(Formatting.GRAY));
-
-            String dimension = normalizeDimension(listing.dimension());
-            String highlightDimension = (dimension.isEmpty() ? playerDimension : dimension);
-
-            WaystoneReference waystone = listing.nearestWaystone();
-            if (waystone != null && waystone.position() != null) {
-                BlockPos wsPos = waystone.position();
-                String wsName = waystone.name() == null || waystone.name().isBlank()
-                        ? "Waystone"
-                        : waystone.name();
-                String dimensionArg = highlightDimension.isEmpty() ? playerDimension : highlightDimension;
-                if (dimensionArg == null) {
-                    dimensionArg = "";
-                }
-                String wsCommand = String.format(Locale.ROOT, "/%s %d %d %d %s %s",
-                        WAYPOINT_COMMAND_NAME,
-                        wsPos.getX(), wsPos.getY(), wsPos.getZ(),
-                        dimensionArg.isEmpty() ? "_" : dimensionArg,
-                        sanitizeNameForCommand(wsName));
-
-                MutableText wsLink = Text.literal(wsName)
-                        .formatted(Formatting.GRAY)
-                        .styled(style -> style
-                                .withClickEvent(new ClickEvent.RunCommand(wsCommand))
-                                .withHoverEvent(new HoverEvent.ShowText(
-                                        Text.literal("Click to create waypoint at " + wsName))));
-
-                line.append(separator).append(wsLink);
+            MutableText line = ListingFormatter.format(i + 1, listing, playerDimension, now);
+            if (line != null) {
+                player.sendMessage(line, false);
             }
-
-            BlockPos listingPos = listing.position();
-            if (listingPos != null) {
-                String waypointName = String.format("%s's Shop", owner);
-                String command = String.format(Locale.ROOT, "/%s %d %d %d %s %s",
-                        WAYPOINT_COMMAND_NAME, listingPos.getX(), listingPos.getY(), listingPos.getZ(),
-                        highlightDimension.isEmpty() ? "_" : highlightDimension, sanitizeNameForCommand(waypointName));
-                MutableText coordsLink = Text.literal(formatCoordinates(listingPos))
-                        .formatted(Formatting.GRAY)
-                        .styled(style -> style
-                                .withClickEvent(new ClickEvent.RunCommand(command))
-                                .withHoverEvent(new HoverEvent.ShowText(
-                                        Text.literal("Click to create waypoint at shop"))));
-                line.append(separator).append(coordsLink);
-            }
-
-            if (!dimension.isEmpty() && !dimension.equals(playerDimension)) {
-                line.append(Text.literal(" (" + dimension + ")").formatted(Formatting.DARK_AQUA));
-            }
-
-            if (isStale(now, listing.lastSeenAt())) {
-                line.append(Text.literal(" [Stale]").formatted(Formatting.RED));
-            }
-
-            player.sendMessage(line, false);
         }
     }
 
@@ -341,29 +279,120 @@ public final class PricebookCommand {
         return converted.toString();
     }
 
-    private static String dimensionName(World world) {
-        if (world == null) {
-            return "";
-        }
-        return normalizeDimension(world.getRegistryKey().getValue().toString());
-    }
-
-    private static String normalizeDimension(String raw) {
-        if (raw == null) {
-            return "";
-        }
-        return switch (raw) {
-            case "minecraft:the_nether", "nether" -> "nether";
-            case "minecraft:the_end", "end" -> "end";
-            case "minecraft:overworld", "overworld" -> "overworld";
-            default -> raw;
-        };
-    }
-
     private static String sanitizeNameForCommand(String raw) {
         if (raw == null || raw.isBlank()) {
             return "Waystone";
         }
         return raw.replace('\n', ' ').replace('\r', ' ').trim();
+    }
+
+    private static MutableText prefixed(String message, Formatting formatting) {
+        MutableText prefix = Text.literal("[Pricebook]").formatted(Formatting.AQUA);
+        if (message == null || message.isBlank()) {
+            return prefix;
+        }
+        MutableText body = Text.literal(" " + message);
+        if (formatting != null) {
+            body = body.formatted(formatting);
+        }
+        return prefix.append(body);
+    }
+
+    private static final class ListingFormatter {
+        private static MutableText format(int index, Listing listing, String playerDimension, Instant now) {
+            if (listing == null) {
+                return null;
+            }
+
+            String owner = listing.owner() == null || listing.owner().isBlank() ? "Unknown" : listing.owner();
+            String priceStr = PRICE_FORMAT.format(listing.price());
+            int amount = Math.max(0, listing.amount());
+
+            MutableText line = Text.literal(String.format(Locale.ROOT, " %d ", index)).formatted(Formatting.DARK_GRAY);
+            line.append(separator());
+            line.append(Text.literal(priceStr).formatted(Formatting.AQUA));
+
+            MutableText quantityPart = Text.literal("[").formatted(Formatting.GRAY)
+                    .append(Text.literal(String.valueOf(amount)).formatted(Formatting.AQUA))
+                    .append(Text.literal("]").formatted(Formatting.GRAY));
+            line.append(separator());
+            line.append(quantityPart);
+
+            line.append(separator());
+            line.append(Text.literal(owner).formatted(Formatting.GRAY));
+
+            String dimension = Dimensions.canonical(listing.dimension());
+            String highlightDimension = dimension.isEmpty() ? playerDimension : dimension;
+
+            appendWaystoneLink(line, listing, highlightDimension, playerDimension);
+            appendCoordinateLink(line, listing, owner, highlightDimension);
+
+            if (!dimension.isEmpty() && !dimension.equals(playerDimension)) {
+                line.append(Text.literal(" (" + dimension + ")").formatted(Formatting.DARK_AQUA));
+            }
+
+            if (isStale(now, listing.lastSeenAt())) {
+                line.append(Text.literal(" [Stale]").formatted(Formatting.RED));
+            }
+
+            return line;
+        }
+
+        private static void appendWaystoneLink(MutableText line, Listing listing,
+                                               String highlightDimension, String playerDimension) {
+            WaystoneReference waystone = listing.nearestWaystone();
+            if (waystone == null || waystone.position() == null) {
+                return;
+            }
+
+            BlockPos wsPos = waystone.position();
+            String wsName = waystone.name() == null || waystone.name().isBlank() ? "Waystone" : waystone.name();
+            String dimensionArg = highlightDimension.isEmpty() ? playerDimension : highlightDimension;
+            if (dimensionArg == null) {
+                dimensionArg = "";
+            }
+            String wsCommand = String.format(Locale.ROOT, "/%s %d %d %d %s %s",
+                    WAYPOINT_COMMAND_NAME,
+                    wsPos.getX(), wsPos.getY(), wsPos.getZ(),
+                    dimensionArg.isEmpty() ? "_" : dimensionArg,
+                    sanitizeNameForCommand(wsName));
+
+            MutableText wsLink = Text.literal(wsName)
+                    .formatted(Formatting.GRAY)
+                    .styled(style -> style
+                            .withClickEvent(new ClickEvent.RunCommand(wsCommand))
+                            .withHoverEvent(new HoverEvent.ShowText(
+                                    Text.literal("Click to create waypoint at " + wsName))));
+
+            line.append(separator());
+            line.append(wsLink);
+        }
+
+        private static void appendCoordinateLink(MutableText line, Listing listing, String owner,
+                                                  String highlightDimension) {
+            BlockPos listingPos = listing.position();
+            if (listingPos == null) {
+                return;
+            }
+
+            String waypointName = String.format("%s's Shop", owner);
+            String command = String.format(Locale.ROOT, "/%s %d %d %d %s %s",
+                    WAYPOINT_COMMAND_NAME,
+                    listingPos.getX(), listingPos.getY(), listingPos.getZ(),
+                    highlightDimension.isEmpty() ? "_" : highlightDimension,
+                    sanitizeNameForCommand(waypointName));
+            MutableText coordsLink = Text.literal(formatCoordinates(listingPos))
+                    .formatted(Formatting.GRAY)
+                    .styled(style -> style
+                            .withClickEvent(new ClickEvent.RunCommand(command))
+                            .withHoverEvent(new HoverEvent.ShowText(
+                                    Text.literal("Click to create waypoint at shop"))));
+            line.append(separator());
+            line.append(coordsLink);
+        }
+
+        private static MutableText separator() {
+            return Text.literal(" · ").formatted(Formatting.DARK_GRAY);
+        }
     }
 }

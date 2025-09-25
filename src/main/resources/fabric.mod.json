@@ -15,7 +15,7 @@
 	"environment": "*",
 	"entrypoints": {
 		"client": [
-			"com.asmp.pricebook.PricebookClient"
+			"com.asmp.pricebook.Pricebook"
 		]
 	},
 	"mixins": [

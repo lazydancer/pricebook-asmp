@@ -1,6 +1,7 @@
 package com.asmp.pricebook.scanner;
 
 import com.asmp.pricebook.config.ModConfig;
+import com.asmp.pricebook.util.Dimensions;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.block.BlockState;
 import net.minecraft.client.MinecraftClient;
@@ -19,24 +20,30 @@ import net.minecraft.util.math.ChunkPos;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Supplier;
 
-public final class WaystoneTracker {
+public final class WaystoneScanner {
     private final ModConfig config;
-    private final HttpScanTransport transport;
     private final Map<WaystoneLocationKey, WaystoneRecord> reported = new HashMap<>();
 
+    private Supplier<HttpScanTransport> transportSupplier = () -> null;
     private Screen lastProcessedScreen;
+    private boolean listenersRegistered;
 
-    public WaystoneTracker(ModConfig config, HttpScanTransport transport) {
+    public WaystoneScanner(ModConfig config) {
         this.config = Objects.requireNonNull(config, "config");
-        this.transport = Objects.requireNonNull(transport, "transport");
     }
 
-    public void init() {
-        ClientTickEvents.END_CLIENT_TICK.register(client -> handleClientTick(client));
+    public void registerListeners() {
+        if (listenersRegistered) {
+            return;
+        }
+        ClientTickEvents.END_CLIENT_TICK.register(this::handleClientTick);
+        listenersRegistered = true;
     }
 
-    public void reset() {
+    public void attachTransport(HttpScanTransport transport) {
+        this.transportSupplier = transport == null ? () -> null : () -> transport;
         reported.clear();
         lastProcessedScreen = null;
     }
@@ -45,7 +52,8 @@ public final class WaystoneTracker {
         if (client == null) {
             return;
         }
-        if (!config.trackWaystones()) {
+        HttpScanTransport transport = transportSupplier.get();
+        if (transport == null || !config.trackWaystones()) {
             lastProcessedScreen = null;
             return;
         }
@@ -81,7 +89,7 @@ public final class WaystoneTracker {
             return;
         }
         ChunkPos chunkPos = new ChunkPos(pos);
-        String dimension = dimensionName(world);
+        String dimension = Dimensions.canonical(world);
         String owner = resolveOwner(handler, client);
         String name = screen.getTitle().getString().trim();
         if (name.isEmpty()) {
@@ -166,15 +174,6 @@ public final class WaystoneTracker {
         BlockState top = world.getBlockState(pos);
         BlockState bottom = world.getBlockState(pos.down());
         return ShopScanner.isWaystonePair(top.getBlock(), bottom.getBlock());
-    }
-
-    private static String dimensionName(ClientWorld world) {
-        String id = world.getRegistryKey().getValue().toString();
-        return switch (id) {
-            case "minecraft:the_nether" -> "nether";
-            case "minecraft:the_end" -> "end";
-            default -> "overworld";
-        };
     }
 
     private record WaystoneLocationKey(String dimension, int chunkX, int chunkZ, BlockPos position) {
