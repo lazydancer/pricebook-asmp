@@ -19,10 +19,8 @@ public final class ModConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final String CONFIG_FILE_NAME = "pricebook-asmp.json";
 
-    public boolean trackShops = true;
     public String senderId = "";
     public String apiBaseUrl = "http://localhost:49876";
-    public Boolean trackWaystones = null;
 
     public static ModConfig load() {
         Path configDir = FabricLoader.getInstance().getConfigDir();
@@ -67,9 +65,6 @@ public final class ModConfig {
         if (apiBaseUrl == null || apiBaseUrl.isBlank()) {
             apiBaseUrl = "http://localhost:49876";
         }
-        if (trackWaystones == null) {
-            trackWaystones = Boolean.TRUE;
-        }
     }
 
     private void save(Path file) {
@@ -87,7 +82,4 @@ public final class ModConfig {
         return Objects.requireNonNullElse(apiBaseUrl, "http://localhost:49876");
     }
 
-    public boolean trackWaystones() {
-        return Boolean.TRUE.equals(trackWaystones);
-    }
 }

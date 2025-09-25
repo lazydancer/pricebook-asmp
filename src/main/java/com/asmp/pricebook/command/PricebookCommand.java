@@ -93,7 +93,7 @@ public final class PricebookCommand {
         WaypointManager.clear(); // Always clear the waypoint when running command
 
         if (!Pricebook.isEnabled()) {
-            player.sendMessage(prefixed("Not connected to asmp.cc.", Formatting.RED), false);
+            player.sendMessage(prefixed("Disabled.", Formatting.RED), false);
             return 1;
         }
 

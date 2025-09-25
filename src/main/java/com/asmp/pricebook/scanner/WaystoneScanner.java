@@ -53,7 +53,7 @@ public final class WaystoneScanner {
             return;
         }
         HttpScanTransport transport = transportSupplier.get();
-        if (transport == null || !config.trackWaystones()) {
+        if (transport == null) {
             lastProcessedScreen = null;
             return;
         }

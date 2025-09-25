@@ -50,7 +50,7 @@ public final class ShopScanner {
     }
 
     public void scanChunk(ClientWorld world, int chunkX, int chunkZ) {
-        if (world == null || !config.trackShops) {
+        if (world == null) {
             return;
         }
         WorldChunk chunk = world.getChunkManager().getWorldChunk(chunkX, chunkZ);
@@ -64,7 +64,7 @@ public final class ShopScanner {
     }
 
     public void scanChunk(ClientWorld world, WorldChunk chunk) {
-        if (world == null || chunk == null || !config.trackShops) {
+        if (world == null || chunk == null) {
             return;
         }
 
@@ -72,9 +72,7 @@ public final class ShopScanner {
         long key = pos.toLong();
 
         Set<ShopSignParser.ShopEntry> currentShops = collectShops(world, chunk);
-        Set<BlockPos> currentWaystones = config.trackWaystones()
-                ? collectWaystones(world, chunk)
-                : Set.of();
+        Set<BlockPos> currentWaystones = collectWaystones(world, chunk);
 
         ChunkSnapshot previous = lastKnownChunks.get(key);
         ChunkSnapshot current = new ChunkSnapshot(Set.copyOf(currentShops), Set.copyOf(currentWaystones));

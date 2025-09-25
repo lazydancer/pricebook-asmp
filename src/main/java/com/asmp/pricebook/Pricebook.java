@@ -6,11 +6,16 @@ import com.asmp.pricebook.config.ModConfig;
 import com.asmp.pricebook.scanner.HttpScanTransport;
 import com.asmp.pricebook.scanner.ShopScanner;
 import com.asmp.pricebook.scanner.WaystoneScanner;
+import com.asmp.pricebook.util.ModVersionChecker;
 import com.asmp.pricebook.waypoint.WaypointManager;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ServerInfo;
+import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 
 import java.util.List;
 import java.util.Locale;
@@ -22,6 +27,8 @@ public final class Pricebook implements ClientModInitializer {
     private static final WaystoneScanner WAYSTONE_SCANNER = new WaystoneScanner(CONFIG);
 
     private static Session session;
+    private static boolean outdatedNotified;
+    private static String requiredVersion = "";
 
     @Override
     public void onInitializeClient() {
@@ -60,6 +67,17 @@ public final class Pricebook implements ClientModInitializer {
             return;
         }
 
+        ModVersionChecker.Result versionResult = ModVersionChecker.check(CONFIG.apiBaseUrl(), currentVersion());
+        if (!versionResult.compatible()) {
+            requiredVersion = versionResult.requiredVersion();
+            notifyOutdated(requiredVersion);
+            endSession();
+            return;
+        }
+
+        outdatedNotified = false;
+        requiredVersion = "";
+
         if (session == null) {
             session = new Session();
         } else {
@@ -73,6 +91,28 @@ public final class Pricebook implements ClientModInitializer {
             session = null;
         }
         WAYSTONE_SCANNER.attachTransport(null);
+    }
+
+    private static void notifyOutdated(String minVersion) {
+        if (outdatedNotified) {
+            return;
+        }
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null) {
+            return;
+        }
+        client.execute(() -> {
+            if (outdatedNotified) {
+                return;
+            }
+            ClientPlayerEntity player = client.player;
+            if (player != null) {
+                String versionText = (minVersion == null || minVersion.isBlank()) ? "the latest" : "v" + minVersion;
+                player.sendMessage(Text.literal("[Pricebook] Disabled: update the mod to " + versionText + " or newer.")
+                        .formatted(Formatting.RED), false);
+                outdatedNotified = true;
+            }
+        });
     }
 
     private static boolean shouldEnableForCurrentServer() {
@@ -101,6 +141,13 @@ public final class Pricebook implements ClientModInitializer {
         }
 
         return normalized.startsWith("asmp.cc:");
+    }
+
+    private static String currentVersion() {
+        return FabricLoader.getInstance()
+                .getModContainer("pricebook-asmp")
+                .map(container -> container.getMetadata().getVersion().getFriendlyString())
+                .orElse("0.0.0");
     }
 
     private static final class Session {
