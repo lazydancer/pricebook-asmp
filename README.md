@@ -6,8 +6,6 @@
   <img src="src/main/resources/assets/pricebook-asmp/icon.png " alt="Screenshot" width="128px">
 </p>
 
-<br></br>
-
 A player-friendly companion mod for the asmp.cc Minecraft server. Pricebook ASMP keeps track of player-run shops and waystones while you explore, then serves up instant answers through the `/pricebook` (or `/pb`) chat command.
 
 ![Price lookup screenshot](docs/images/pricebook-command.png)
@@ -34,8 +32,8 @@ A player-friendly companion mod for the asmp.cc Minecraft server. Pricebook ASMP
 
 ## Behind The Scenes
 - The mod sends lightweight JSON updates about shops you’ve seen (owner, item, price, amount) plus optional waystone positions.
-- Requests go to your configured Pricebook service (defaults to `http://localhost:49876` for development).
-- A config file named `config/pricebook-asmp.json` is created on first run. You can toggle features like shop scanning or waystone tracking there.
+- Requests go to your configured Pricebook service.
+- A config file named `config/pricebook-asmp.json` is created on first run.
 
 ## FAQ
 - **Does it share my coordinates all the time?** Only when a shop sign or waystone is detected in a chunk you loaded, and only to the pricebook database.
