@@ -67,11 +67,7 @@ public final class HttpScanTransport {
         root.addProperty("name", name);
         root.addProperty("owner", owner);
 
-        JsonArray coords = new JsonArray();
-        coords.add(position.getX());
-        coords.add(position.getY());
-        coords.add(position.getZ());
-        root.add("position", coords);
+        root.add("position", toCoordinates(position));
 
         HttpRequest request = HttpRequest.newBuilder(waystoneEndpoint)
                 .timeout(Duration.ofSeconds(10))
@@ -131,11 +127,7 @@ public final class HttpScanTransport {
             shop.addProperty("dimension", dimension);
             shop.addProperty("action", entry.action());
 
-            JsonArray position = new JsonArray();
-            position.add(entry.position().getX());
-            position.add(entry.position().getY());
-            position.add(entry.position().getZ());
-            shop.add("position", position);
+            shop.add("position", toCoordinates(entry.position()));
 
             shopsJson.add(shop);
         }
@@ -145,11 +137,7 @@ public final class HttpScanTransport {
         JsonArray waystonesJson = new JsonArray();
         for (BlockPos waypoint : waystones) {
             JsonObject element = new JsonObject();
-            JsonArray position = new JsonArray();
-            position.add(waypoint.getX());
-            position.add(waypoint.getY());
-            position.add(waypoint.getZ());
-            element.add("position", position);
+            element.add("position", toCoordinates(waypoint));
             waystonesJson.add(element);
         }
         root.add("waystones", waystonesJson);
@@ -220,6 +208,14 @@ public final class HttpScanTransport {
             // ignore malformed payloads
         }
         return result;
+    }
+
+    private static JsonArray toCoordinates(BlockPos pos) {
+        JsonArray coords = new JsonArray();
+        coords.add(pos.getX());
+        coords.add(pos.getY());
+        coords.add(pos.getZ());
+        return coords;
     }
 
 

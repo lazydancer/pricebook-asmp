@@ -128,29 +128,26 @@ public final class ShopScanner {
     private Set<BlockPos> collectWaystones(ClientWorld world, WorldChunk chunk) {
         Set<BlockPos> positions = new HashSet<>();
         ChunkPos chunkPos = chunk.getPos();
-        Mutable bottomPos = new Mutable();
-        Mutable topPos = new Mutable();
         int minY = world.getBottomY();
         int maxY = minY + world.getHeight() - 1;
+        BlockPos start = new BlockPos(chunkPos.getStartX(), minY, chunkPos.getStartZ());
+        BlockPos end = new BlockPos(chunkPos.getEndX(), maxY - 1, chunkPos.getEndZ());
 
-        for (int localX = 0; localX < 16; localX++) {
-            int worldX = chunkPos.getStartX() + localX;
-            for (int localZ = 0; localZ < 16; localZ++) {
-                int worldZ = chunkPos.getStartZ() + localZ;
-                for (int y = minY; y < maxY; y++) {
-                    bottomPos.set(worldX, y, worldZ);
-                    Block bottomBlock = chunk.getBlockState(bottomPos).getBlock();
-                    List<WaystonePattern> patterns = WAYSTONE_PATTERNS.get(bottomBlock);
-                    if (patterns == null || patterns.isEmpty()) {
-                        continue;
-                    }
+        Mutable bottomPos = new Mutable();
+        Mutable topPos = new Mutable();
 
-                    topPos.set(worldX, y + 1, worldZ);
-                    Block topBlock = chunk.getBlockState(topPos).getBlock();
-                    if (isWaystonePair(topBlock, bottomBlock)) {
-                        positions.add(topPos.toImmutable());
-                    }
-                }
+        for (BlockPos current : BlockPos.iterate(start, end)) {
+            bottomPos.set(current);
+            Block bottomBlock = chunk.getBlockState(bottomPos).getBlock();
+            List<WaystonePattern> patterns = WAYSTONE_PATTERNS.get(bottomBlock);
+            if (patterns == null || patterns.isEmpty()) {
+                continue;
+            }
+
+            topPos.set(bottomPos).move(0, 1, 0);
+            Block topBlock = chunk.getBlockState(topPos).getBlock();
+            if (isWaystonePair(topBlock, bottomBlock)) {
+                positions.add(topPos.toImmutable());
             }
         }
         return positions;

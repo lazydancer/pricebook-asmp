@@ -153,12 +153,10 @@ public final class PricebookCommand {
             return 0;
         }
 
-        String dimension;
-        if (dimensionArg == null || dimensionArg.isBlank() || "_".equals(dimensionArg)) {
-            dimension = Dimensions.canonical(player.getWorld());
-        } else {
-            dimension = Dimensions.canonical(dimensionArg);
-        }
+        boolean usePlayerDimension = dimensionArg == null || dimensionArg.isBlank() || "_".equals(dimensionArg);
+        String dimension = usePlayerDimension
+                ? Dimensions.canonical(player.getWorld())
+                : Dimensions.canonical(dimensionArg);
 
         BlockPos pos = new BlockPos(x, y, z);
         boolean success = WaypointManager.createWaypoint(pos, dimension, name);
@@ -286,8 +284,10 @@ public final class PricebookCommand {
         return raw.replace('\n', ' ').replace('\r', ' ').trim();
     }
 
+    private static final Text PREFIX = Text.literal("[Pricebook]").formatted(Formatting.AQUA);
+
     private static MutableText prefixed(String message, Formatting formatting) {
-        MutableText prefix = Text.literal("[Pricebook]").formatted(Formatting.AQUA);
+        MutableText prefix = PREFIX.copy();
         if (message == null || message.isBlank()) {
             return prefix;
         }
@@ -351,11 +351,7 @@ public final class PricebookCommand {
             if (dimensionArg == null) {
                 dimensionArg = "";
             }
-            String wsCommand = String.format(Locale.ROOT, "/%s %d %d %d %s %s",
-                    WAYPOINT_COMMAND_NAME,
-                    wsPos.getX(), wsPos.getY(), wsPos.getZ(),
-                    dimensionArg.isEmpty() ? "_" : dimensionArg,
-                    sanitizeNameForCommand(wsName));
+            String wsCommand = waypointCommand(wsPos, dimensionArg, wsName);
 
             MutableText wsLink = Text.literal(wsName)
                     .formatted(Formatting.GRAY)
@@ -376,11 +372,7 @@ public final class PricebookCommand {
             }
 
             String waypointName = String.format("%s's Shop", owner);
-            String command = String.format(Locale.ROOT, "/%s %d %d %d %s %s",
-                    WAYPOINT_COMMAND_NAME,
-                    listingPos.getX(), listingPos.getY(), listingPos.getZ(),
-                    highlightDimension.isEmpty() ? "_" : highlightDimension,
-                    sanitizeNameForCommand(waypointName));
+            String command = waypointCommand(listingPos, highlightDimension, waypointName);
             MutableText coordsLink = Text.literal(formatCoordinates(listingPos))
                     .formatted(Formatting.GRAY)
                     .styled(style -> style
@@ -391,8 +383,19 @@ public final class PricebookCommand {
             line.append(coordsLink);
         }
 
+        private static final Text SEPARATOR = Text.literal(" · ").formatted(Formatting.DARK_GRAY);
+
         private static MutableText separator() {
-            return Text.literal(" · ").formatted(Formatting.DARK_GRAY);
+            return SEPARATOR.copy();
+        }
+
+        private static String waypointCommand(BlockPos pos, String dimension, String label) {
+            String dimToken = (dimension == null || dimension.isBlank()) ? "_" : dimension;
+            return String.format(Locale.ROOT, "/%s %d %d %d %s %s",
+                    WAYPOINT_COMMAND_NAME,
+                    pos.getX(), pos.getY(), pos.getZ(),
+                    dimToken,
+                    sanitizeNameForCommand(label));
         }
     }
 }
