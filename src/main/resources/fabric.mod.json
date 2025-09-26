@@ -5,7 +5,7 @@
 	"name": "Pricebook ASMP",
 	"description": "Scans shop signs and publishes observations to the pricebook ASMP backend.",
 	"authors": [
-		"ASMP Tools"
+		"lazydancer"
 	],
 	"contact": {
 		"sources": "https://github.com/lazydancer/pricebook-asmp"
