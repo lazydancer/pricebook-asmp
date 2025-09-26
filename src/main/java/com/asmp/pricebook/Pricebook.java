@@ -67,7 +67,30 @@ public final class Pricebook implements ClientModInitializer {
             return;
         }
 
-        ModVersionChecker.Result versionResult = ModVersionChecker.check(CONFIG.apiBaseUrl(), currentVersion());
+        ModVersionChecker.checkAsync(CONFIG.apiBaseUrl(), currentVersion())
+                .handle((result, throwable) -> {
+                    ModVersionChecker.Result safe = (throwable != null || result == null)
+                            ? ModVersionChecker.Result.compatibleResult()
+                            : result;
+                    runOnClient(() -> applyVersionCheckResult(safe));
+                    return null;
+                });
+    }
+
+    private static void endSession() {
+        if (session != null) {
+            session.close();
+            session = null;
+        }
+        WAYSTONE_SCANNER.attachTransport(null);
+    }
+
+    private static void applyVersionCheckResult(ModVersionChecker.Result versionResult) {
+        if (!shouldEnableForCurrentServer()) {
+            endSession();
+            return;
+        }
+
         if (!versionResult.compatible()) {
             requiredVersion = versionResult.requiredVersion();
             notifyOutdated(requiredVersion);
@@ -85,12 +108,13 @@ public final class Pricebook implements ClientModInitializer {
         }
     }
 
-    private static void endSession() {
-        if (session != null) {
-            session.close();
-            session = null;
+    private static void runOnClient(Runnable action) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client != null) {
+            client.execute(action);
+        } else {
+            action.run();
         }
-        WAYSTONE_SCANNER.attachTransport(null);
     }
 
     private static void notifyOutdated(String minVersion) {

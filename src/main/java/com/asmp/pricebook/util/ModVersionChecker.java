@@ -8,59 +8,74 @@ import java.net.URI;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.CompletableFuture;
 
 public final class ModVersionChecker {
     private ModVersionChecker() {
     }
 
-    public static Result check(String baseUrl, String currentVersion) {
+    public static CompletableFuture<Result> checkAsync(String baseUrl, String currentVersion) {
         String url = normalizeEndpoint(baseUrl);
         if (url.isEmpty()) {
+            return CompletableFuture.completedFuture(Result.compatibleResult());
+        }
+
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                .GET()
+                .header("Accept", "application/json")
+                .build();
+
+        return HttpClients.shared()
+                .sendAsync(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
+                .thenApply(response -> parseResponse(response, currentVersion))
+                .exceptionally(ignored -> Result.compatibleResult());
+    }
+
+    private static Result parseResponse(HttpResponse<String> response, String currentVersion) {
+        if (response == null) {
             return Result.compatibleResult();
         }
 
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            return Result.compatibleResult();
+        }
+
+        String body = response.body();
+        if (body == null || body.isBlank()) {
+            return Result.compatibleResult();
+        }
+
+        JsonElement parsed;
         try {
-            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
-                    .GET()
-                    .header("Accept", "application/json")
-                    .build();
-
-            HttpResponse<String> response = HttpClients.shared()
-                    .send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                return Result.compatibleResult();
-            }
-
-            String body = response.body();
-            if (body == null || body.isBlank()) {
-                return Result.compatibleResult();
-            }
-
-            JsonElement parsed = JsonParser.parseString(body);
-            if (!parsed.isJsonObject()) {
-                return Result.compatibleResult();
-            }
-
-            JsonObject obj = parsed.getAsJsonObject();
-            JsonElement minElement = obj.get("min_version");
-            if (minElement == null || minElement.isJsonNull()) {
-                return Result.compatibleResult();
-            }
-
-            String minVersion = minElement.getAsString();
-            if (minVersion == null || minVersion.isBlank()) {
-                return Result.compatibleResult();
-            }
-
-            String current = currentVersion == null ? "0" : currentVersion.trim();
-            if (compareVersions(current, minVersion) < 0) {
-                return Result.outdated(minVersion);
-            }
-            return Result.compatibleResult();
-        } catch (Exception ignored) {
+            parsed = JsonParser.parseString(body);
+        } catch (RuntimeException ex) {
             return Result.compatibleResult();
         }
+        if (!parsed.isJsonObject()) {
+            return Result.compatibleResult();
+        }
+
+        JsonObject obj = parsed.getAsJsonObject();
+        JsonElement minElement = obj.get("min_version");
+        if (minElement == null || minElement.isJsonNull()) {
+            return Result.compatibleResult();
+        }
+
+        String minVersion;
+        try {
+            minVersion = minElement.getAsString();
+        } catch (RuntimeException ex) {
+            return Result.compatibleResult();
+        }
+        if (minVersion == null || minVersion.isBlank()) {
+            return Result.compatibleResult();
+        }
+
+        String current = currentVersion == null ? "0" : currentVersion.trim();
+        if (compareVersions(current, minVersion) < 0) {
+            return Result.outdated(minVersion);
+        }
+        return Result.compatibleResult();
     }
 
     private static String normalizeEndpoint(String baseUrl) {
