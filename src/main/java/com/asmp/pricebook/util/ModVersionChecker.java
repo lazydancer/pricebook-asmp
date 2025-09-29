@@ -3,6 +3,7 @@ package com.asmp.pricebook.util;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import org.slf4j.Logger;
 
 import java.net.URI;
 import java.net.http.HttpRequest;
@@ -11,15 +12,19 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
 
 public final class ModVersionChecker {
+    private static final Logger LOGGER = Loggers.APP;
+
     private ModVersionChecker() {
     }
 
     public static CompletableFuture<Result> checkAsync(String baseUrl, String currentVersion) {
         String url = normalizeEndpoint(baseUrl);
         if (url.isEmpty()) {
+            LOGGER.warn("Cannot check mod version: invalid base URL");
             return CompletableFuture.completedFuture(Result.compatibleResult());
         }
 
+        LOGGER.debug("Checking mod version, current={}, endpoint={}", currentVersion, url);
         HttpRequest request = HttpRequest.newBuilder(URI.create(url))
                 .GET()
                 .header("Accept", "application/json")
@@ -28,7 +33,10 @@ public final class ModVersionChecker {
         return HttpClients.shared()
                 .sendAsync(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
                 .thenApply(response -> parseResponse(response, currentVersion))
-                .exceptionally(ignored -> Result.compatibleResult());
+                .exceptionally(ex -> {
+                    LOGGER.warn("Version check failed: {}", ex.getMessage());
+                    return Result.compatibleResult();
+                });
     }
 
     private static Result parseResponse(HttpResponse<String> response, String currentVersion) {
@@ -37,6 +45,7 @@ public final class ModVersionChecker {
         }
 
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            LOGGER.warn("Version check returned status {}", response.statusCode());
             return Result.compatibleResult();
         }
 
@@ -73,8 +82,10 @@ public final class ModVersionChecker {
 
         String current = currentVersion == null ? "0" : currentVersion.trim();
         if (compareVersions(current, minVersion) < 0) {
+            LOGGER.warn("Mod version {} is outdated, minimum required is {}", current, minVersion);
             return Result.outdated(minVersion);
         }
+        LOGGER.info("Mod version {} is compatible (minimum: {})", current, minVersion);
         return Result.compatibleResult();
     }
 

@@ -23,6 +23,13 @@ import java.util.Objects;
 import java.util.function.Supplier;
 
 public final class WaystoneScanner {
+    private static final int WAYSTONE_GUI_ROWS = 6;
+    private static final int WAYSTONE_GUI_COLUMNS = 9;
+    private static final int PLAYER_INVENTORY_SLOTS = 36;
+    private static final int WAYSTONE_GUI_TOTAL_SLOTS = 49;
+    private static final int HELMET_SLOT_INDEX = 5;
+    private static final int SPYGLASS_SLOT_INDEX = 49;
+
     private final ModConfig config;
     private final Map<WaystoneLocationKey, WaystoneRecord> reported = new HashMap<>();
 
@@ -113,21 +120,21 @@ public final class WaystoneScanner {
         if (handler == null) {
             return false;
         }
-        int waystoneSlots = 6 * 9;
-        int playerInventorySlots = 36;
+        int waystoneSlots = WAYSTONE_GUI_ROWS * WAYSTONE_GUI_COLUMNS;
+        int playerInventorySlots = PLAYER_INVENTORY_SLOTS;
         if (handler.slots.size() < waystoneSlots + playerInventorySlots) {
             return false;
         }
-        if (handler.slots.size() <= 49) {
+        if (handler.slots.size() <= WAYSTONE_GUI_TOTAL_SLOTS) {
             return false;
         }
 
-        ItemStack head = handler.getSlot(5).getStack();
+        ItemStack head = handler.getSlot(HELMET_SLOT_INDEX).getStack();
         if (head.isEmpty() || head.getItem() != Items.PLAYER_HEAD) {
             return false;
         }
 
-        ItemStack spyglass = handler.getSlot(49).getStack();
+        ItemStack spyglass = handler.getSlot(SPYGLASS_SLOT_INDEX).getStack();
         if (spyglass.isEmpty() || spyglass.getItem() != Items.SPYGLASS) {
             return false;
         }
@@ -136,7 +143,7 @@ public final class WaystoneScanner {
     }
 
     private static String resolveOwner(ScreenHandler handler, MinecraftClient client) {
-        ItemStack head = handler.getSlot(5).getStack();
+        ItemStack head = handler.getSlot(HELMET_SLOT_INDEX).getStack();
         if (head.isEmpty()) {
             return "Unknown";
         }

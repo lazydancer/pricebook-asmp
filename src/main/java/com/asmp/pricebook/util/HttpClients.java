@@ -8,8 +8,10 @@ import java.time.Duration;
  * spin up redundant thread pools per service.
  */
 public final class HttpClients {
+    private static final int CONNECT_TIMEOUT_SECONDS = 5;
+
     private static final HttpClient SHARED = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(5))
+            .connectTimeout(Duration.ofSeconds(CONNECT_TIMEOUT_SECONDS))
             .version(HttpClient.Version.HTTP_1_1)
             .build();
 

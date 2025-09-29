@@ -37,6 +37,9 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 public final class PricebookCommand {
+    private static final int STALENESS_THRESHOLD_MINUTES = 60 * 24;
+    private static final int MAX_LISTINGS_DISPLAYED = 3;
+
     private static final DecimalFormat PRICE_FORMAT = new DecimalFormat("0.###",
             DecimalFormatSymbols.getInstance(Locale.ROOT));
     private static final String WAYPOINT_COMMAND_NAME = "pricebook_waypoint";
@@ -231,7 +234,7 @@ public final class PricebookCommand {
         String playerDimension = Dimensions.canonical(player.getWorld());
         Instant now = Instant.now();
 
-        int limit = Math.min(3, entries.size());
+        int limit = Math.min(MAX_LISTINGS_DISPLAYED, entries.size());
         for (int i = 0; i < limit; i++) {
             Listing listing = entries.get(i);
             MutableText line = ListingFormatter.format(i + 1, listing, playerDimension, now);
@@ -246,7 +249,7 @@ public final class PricebookCommand {
             return true;
         }
         Duration age = Duration.between(lastSeen, now).abs();
-        return age.toMinutes() >= 60 * 24;
+        return age.toMinutes() >= STALENESS_THRESHOLD_MINUTES;
     }
 
     private static String formatCoordinates(BlockPos listingPos) {

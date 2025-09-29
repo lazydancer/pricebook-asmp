@@ -2,11 +2,13 @@ package com.asmp.pricebook.command;
 
 import com.asmp.pricebook.config.ModConfig;
 import com.asmp.pricebook.util.HttpClients;
+import com.asmp.pricebook.util.Loggers;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import net.minecraft.util.math.BlockPos;
+import org.slf4j.Logger;
 
 import java.net.URI;
 import java.net.URLEncoder;
@@ -23,6 +25,10 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 public final class PricebookQueryService {
+    private static final Logger LOGGER = Loggers.APP;
+    private static final int ITEM_LOOKUP_TIMEOUT_SECONDS = 8;
+    private static final int CATALOG_FETCH_TIMEOUT_SECONDS = 10;
+
     private final HttpClient httpClient;
     private final String baseUrl;
 
@@ -42,28 +48,34 @@ public final class PricebookQueryService {
         URI uri = URI.create(baseUrl + "/v1/item?item=" + encoded);
 
         HttpRequest request = HttpRequest.newBuilder(uri)
-                .timeout(Duration.ofSeconds(8))
+                .timeout(Duration.ofSeconds(ITEM_LOOKUP_TIMEOUT_SECONDS))
                 .header("Accept", "application/json")
                 .GET()
                 .build();
 
         return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
                 .thenApply(this::parseResponse)
-                .exceptionally(throwable -> ItemLookupResult.error("Failed to reach pricebook service."));
+                .exceptionally(throwable -> {
+                    LOGGER.warn("Failed to lookup item '{}': {}", trimmed, throwable.getMessage());
+                    return ItemLookupResult.error("Failed to reach pricebook service.");
+                });
     }
 
     public CompletableFuture<List<String>> fetchCatalog() {
         URI uri = URI.create(baseUrl + "/v1/items");
 
         HttpRequest request = HttpRequest.newBuilder(uri)
-                .timeout(Duration.ofSeconds(10))
+                .timeout(Duration.ofSeconds(CATALOG_FETCH_TIMEOUT_SECONDS))
                 .header("Accept", "application/json")
                 .GET()
                 .build();
 
         return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
                 .thenApply(this::parseCatalog)
-                .exceptionally(throwable -> Collections.emptyList());
+                .exceptionally(throwable -> {
+                    LOGGER.warn("Failed to fetch item catalog: {}", throwable.getMessage());
+                    return Collections.emptyList();
+                });
     }
 
     private ItemLookupResult parseResponse(HttpResponse<String> response) {
@@ -106,6 +118,7 @@ public final class PricebookQueryService {
             ItemInfo info = new ItemInfo(item, refreshedAt, sellers, buyers);
             return ItemLookupResult.success(info);
         } catch (RuntimeException ex) {
+            LOGGER.warn("Failed to parse item lookup response: {}", ex.getMessage());
             return ItemLookupResult.error("Item not found. No buyers or sellers yet.");
         }
     }
@@ -261,7 +274,8 @@ public final class PricebookQueryService {
                     result.add(trimmed);
                 }
             }
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException ex) {
+            LOGGER.warn("Failed to parse catalog response: {}", ex.getMessage());
             return Collections.emptyList();
         }
         return result;

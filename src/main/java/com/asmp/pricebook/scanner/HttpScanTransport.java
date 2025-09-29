@@ -2,12 +2,14 @@ package com.asmp.pricebook.scanner;
 
 import com.asmp.pricebook.config.ModConfig;
 import com.asmp.pricebook.util.HttpClients;
+import com.asmp.pricebook.util.Loggers;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
+import org.slf4j.Logger;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -22,6 +24,9 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class HttpScanTransport {
+    private static final Logger LOGGER = Loggers.APP;
+    private static final int REQUEST_TIMEOUT_SECONDS = 10;
+
     private final HttpClient httpClient;
     private final String baseUrl;
     private final URI scanEndpoint;
@@ -34,6 +39,7 @@ public final class HttpScanTransport {
         this.baseUrl = config.apiBaseUrl();
         this.scanEndpoint = URI.create(baseUrl + "/v1/scan");
         this.waystoneEndpoint = URI.create(baseUrl + "/v1/scan-waystone");
+        LOGGER.debug("Initialized HttpScanTransport with baseUrl={}", baseUrl);
     }
 
     public void sendScan(String senderId, String dimension, ChunkPos pos,
@@ -47,7 +53,7 @@ public final class HttpScanTransport {
         String payload = encodePayload(senderId, dimension, pos, shops, waystones);
 
         HttpRequest request = HttpRequest.newBuilder(scanEndpoint)
-                .timeout(Duration.ofSeconds(10))
+                .timeout(Duration.ofSeconds(REQUEST_TIMEOUT_SECONDS))
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(payload, StandardCharsets.UTF_8))
@@ -70,7 +76,7 @@ public final class HttpScanTransport {
         root.add("position", toCoordinates(position));
 
         HttpRequest request = HttpRequest.newBuilder(waystoneEndpoint)
-                .timeout(Duration.ofSeconds(10))
+                .timeout(Duration.ofSeconds(REQUEST_TIMEOUT_SECONDS))
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(root.toString(), StandardCharsets.UTF_8))
@@ -80,6 +86,7 @@ public final class HttpScanTransport {
     }
 
     public void bootstrap() {
+        LOGGER.debug("Bootstrapping transport: fetching known chunks from server");
         fetchChunksPage();
     }
 
@@ -94,11 +101,13 @@ public final class HttpScanTransport {
     private void handleSendResult(ChunkCoordinate coordinate, boolean empty,
                                   HttpResponse<String> response, Throwable throwable) {
         if (throwable != null) {
+            LOGGER.warn("Failed to send scan for chunk {}: {}", coordinate, throwable.getMessage());
             return;
         }
 
         int status = response.statusCode();
         if (status >= 200 && status < 300) {
+            LOGGER.debug("Successfully sent scan for chunk {}, empty={}", coordinate, empty);
             if (empty) {
                 serverKnownChunks.remove(coordinate);
             } else {
@@ -107,6 +116,7 @@ public final class HttpScanTransport {
             return;
         }
 
+        LOGGER.warn("Scan request failed for chunk {} with status {}", coordinate, status);
     }
 
     private String encodePayload(String senderId, String dimension, ChunkPos pos,
@@ -147,7 +157,7 @@ public final class HttpScanTransport {
     private void fetchChunksPage() {
         URI uri = URI.create(baseUrl + "/v1/chunks");
         HttpRequest request = HttpRequest.newBuilder(uri)
-                .timeout(Duration.ofSeconds(10))
+                .timeout(Duration.ofSeconds(REQUEST_TIMEOUT_SECONDS))
                 .header("Accept", "application/json")
                 .GET()
                 .build();
@@ -158,19 +168,23 @@ public final class HttpScanTransport {
 
     private void handleChunksResponse(HttpResponse<String> response, Throwable throwable) {
         if (throwable != null) {
+            LOGGER.warn("Failed to fetch known chunks: {}", throwable.getMessage());
             return;
         }
 
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            LOGGER.warn("Failed to fetch known chunks, status={}", response.statusCode());
             return;
         }
 
         List<ChunkCoordinate> chunks = parseChunkList(response.body());
         if (chunks.isEmpty()) {
+            LOGGER.debug("No known chunks returned from server");
             return;
         }
 
         serverKnownChunks.addAll(chunks);
+        LOGGER.info("Loaded {} known chunks from server", chunks.size());
     }
 
     private List<ChunkCoordinate> parseChunkList(String body) {
@@ -205,7 +219,7 @@ public final class HttpScanTransport {
                 }
             }
         } catch (RuntimeException ex) {
-            // ignore malformed payloads
+            LOGGER.warn("Failed to parse chunk list response: {}", ex.getMessage());
         }
         return result;
     }

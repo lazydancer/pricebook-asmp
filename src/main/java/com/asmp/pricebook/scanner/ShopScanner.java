@@ -2,6 +2,7 @@ package com.asmp.pricebook.scanner;
 
 import com.asmp.pricebook.config.ModConfig;
 import com.asmp.pricebook.util.Dimensions;
+import com.asmp.pricebook.util.Loggers;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import net.minecraft.block.Block;
@@ -12,6 +13,7 @@ import net.minecraft.util.math.BlockPos.Mutable;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.World;
 import net.minecraft.world.chunk.WorldChunk;
+import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -25,6 +27,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 public final class ShopScanner {
+    private static final Logger LOGGER = Loggers.APP;
     private static final Comparator<ShopSignParser.ShopEntry> ENTRY_ORDER = Comparator
             .comparing(ShopSignParser.ShopEntry::owner, String.CASE_INSENSITIVE_ORDER)
             .thenComparing(ShopSignParser.ShopEntry::item, String.CASE_INSENSITIVE_ORDER)
@@ -77,6 +80,7 @@ public final class ShopScanner {
         ChunkSnapshot previous = lastKnownChunks.get(key);
         ChunkSnapshot current = new ChunkSnapshot(Set.copyOf(currentShops), Set.copyOf(currentWaystones));
         if (previous != null && previous.equals(current)) {
+            LOGGER.trace("Chunk {} unchanged, skipping scan", pos);
             return;
         }
 
@@ -92,9 +96,11 @@ public final class ShopScanner {
         String dimension = Dimensions.canonical(world);
         boolean empty = sorted.isEmpty() && waystones.isEmpty();
         if (empty && !transport.shouldTransmitEmpty(dimension, pos)) {
+            LOGGER.trace("Chunk {} is empty and not known to server, skipping", pos);
             return;
         }
 
+        LOGGER.debug("Scanning chunk {} in {}: {} shops, {} waystones", pos, dimension, sorted.size(), waystones.size());
         transport.sendScan(config.senderId, dimension, pos, sorted, waystones);
     }
 

@@ -6,6 +6,7 @@ import com.asmp.pricebook.config.ModConfig;
 import com.asmp.pricebook.scanner.HttpScanTransport;
 import com.asmp.pricebook.scanner.ShopScanner;
 import com.asmp.pricebook.scanner.WaystoneScanner;
+import com.asmp.pricebook.util.Loggers;
 import com.asmp.pricebook.util.ModVersionChecker;
 import com.asmp.pricebook.waypoint.WaypointManager;
 import net.fabricmc.api.ClientModInitializer;
@@ -32,6 +33,7 @@ public final class Pricebook implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        Loggers.APP.info("Client init reached");
         WaypointManager.initClient();
         WAYSTONE_SCANNER.registerListeners();
         PricebookCommand.register();
