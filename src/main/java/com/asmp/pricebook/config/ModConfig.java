@@ -61,12 +61,7 @@ public final class ModConfig {
     }
 
     private static String generateSenderId() {
-        String user = Optional.ofNullable(MinecraftClient.getInstance())
-                .map(MinecraftClient::getSession)
-                .map(session -> session.getUsername())
-                .filter(name -> !name.isBlank())
-                .orElse("player");
-        return user + "-" + UUID.randomUUID().toString().substring(0, SENDER_ID_UUID_LENGTH);
+        return UUID.randomUUID().toString().substring(0, SENDER_ID_UUID_LENGTH);
     }
 
     private void applyDefaults() {

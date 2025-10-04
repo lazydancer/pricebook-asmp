@@ -141,7 +141,45 @@ public final class PricebookCommand {
         if (catalog == null || catalog.isEmpty()) {
             return builder.buildFuture();
         }
-        return CommandSource.suggestMatching(catalog, builder);
+
+        String input = builder.getRemaining().toLowerCase(Locale.ROOT);
+        if (input.isBlank()) {
+            catalog.stream()
+                .map(item -> item.toLowerCase(Locale.ROOT))
+                .forEach(builder::suggest);
+            return builder.buildFuture();
+        }
+
+        String[] tokens = input.trim().split("\\s+");
+
+        catalog.stream()
+            .filter(item -> {
+                String itemLower = item.toLowerCase(Locale.ROOT);
+                for (String token : tokens) {
+                    if (!itemLower.contains(token)) {
+                        return false;
+                    }
+                }
+                return true;
+            })
+            .sorted((a, b) -> {
+                String aLower = a.toLowerCase(Locale.ROOT);
+                String bLower = b.toLowerCase(Locale.ROOT);
+
+                // Prioritize items that start with the input
+                boolean aStarts = aLower.startsWith(input);
+                boolean bStarts = bLower.startsWith(input);
+                if (aStarts != bStarts) {
+                    return aStarts ? -1 : 1;
+                }
+
+                // Then by length (shorter = more relevant)
+                return Integer.compare(a.length(), b.length());
+            })
+            .map(item -> item.toLowerCase(Locale.ROOT))
+            .forEach(builder::suggest);
+
+        return builder.buildFuture();
     }
 
     private static int createWaypoint(FabricClientCommandSource source, int x, int y, int z,
