@@ -7,7 +7,8 @@
 
 A player-friendly companion mod for the asmp.cc Minecraft server. Pricebook ASMP keeps track of player-run shops and waystones while you explore, then serves up instant answers through the `/pricebook` (or `/pb`) chat command.
 
-![Price lookup screenshot](docs/images/pricebook-command.png)
+![Price lookup screenshot](docs/images/pricebook-command-1.2.0.png)
+![Price historyscreenshot](docs/images/pricebook-history.png)
 
 ## Features
 - **Know before you go**: Type `/pricebook <item>` and see who is selling or buying it right now, along with prices and stock.

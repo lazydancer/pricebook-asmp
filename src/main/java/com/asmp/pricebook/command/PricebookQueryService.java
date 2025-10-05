@@ -316,4 +316,109 @@ public final class PricebookQueryService {
 
     public record WaystoneReference(String name, BlockPos position, int distanceSq) {
     }
+
+    public CompletableFuture<PriceHistoryResult> fetchHistory(String itemName) {
+        String trimmed = itemName == null ? "" : itemName.trim();
+        if (trimmed.isEmpty()) {
+            return CompletableFuture.completedFuture(PriceHistoryResult.error("Item name required."));
+        }
+
+        String encoded = URLEncoder.encode(trimmed, StandardCharsets.UTF_8);
+        URI uri = URI.create(baseUrl + "/v1/item/history?item=" + encoded);
+
+        HttpRequest request = HttpRequest.newBuilder(uri)
+                .timeout(Duration.ofSeconds(ITEM_LOOKUP_TIMEOUT_SECONDS))
+                .header("Accept", "application/json")
+                .GET()
+                .build();
+
+        return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
+                .thenApply(this::parseHistoryResponse)
+                .exceptionally(throwable -> {
+                    LOGGER.warn("Failed to fetch history for '{}': {}", trimmed, throwable.getMessage());
+                    return PriceHistoryResult.error("Failed to reach pricebook service.");
+                });
+    }
+
+    private PriceHistoryResult parseHistoryResponse(HttpResponse<String> response) {
+        if (response == null) {
+            return PriceHistoryResult.error("No response from pricebook service.");
+        }
+
+        int status = response.statusCode();
+        if (status < 200 || status >= 300) {
+            return PriceHistoryResult.error("Pricebook service returned status " + status + ".");
+        }
+
+        String body = response.body();
+        if (body == null || body.isBlank()) {
+            return PriceHistoryResult.error("Pricebook service returned empty body.");
+        }
+
+        try {
+            JsonElement parsed = JsonParser.parseString(body);
+            if (!parsed.isJsonObject()) {
+                return PriceHistoryResult.error("Malformed pricebook payload.");
+            }
+
+            JsonObject root = parsed.getAsJsonObject();
+            boolean ok = root.has("ok") && root.get("ok").getAsBoolean();
+            if (!ok) {
+                return PriceHistoryResult.error("No history data available.");
+            }
+
+            String item = getString(root, "item");
+            List<HistoryDay> historyDays = parseHistoryDays(root.getAsJsonArray("history"));
+
+            PriceHistory history = new PriceHistory(item, historyDays);
+            return PriceHistoryResult.success(history);
+        } catch (RuntimeException ex) {
+            LOGGER.warn("Failed to parse history response: {}", ex.getMessage());
+            return PriceHistoryResult.error("No history data available.");
+        }
+    }
+
+    private List<HistoryDay> parseHistoryDays(JsonArray array) {
+        if (array == null) {
+            return Collections.emptyList();
+        }
+
+        List<HistoryDay> result = new ArrayList<>();
+        for (JsonElement element : array) {
+            if (!element.isJsonObject()) {
+                continue;
+            }
+            JsonObject obj = element.getAsJsonObject();
+            try {
+                String date = getString(obj, "date");
+                double lowestPrice = safeDouble(obj, "lowestPrice");
+                int stock = safeInt(obj, "stock");
+                int shops = safeInt(obj, "shops");
+                result.add(new HistoryDay(date, lowestPrice, stock, shops));
+            } catch (RuntimeException ignored) {
+                // Skip malformed entry
+            }
+        }
+        return result;
+    }
+
+    public record PriceHistoryResult(PriceHistory history, String error) {
+        public static PriceHistoryResult success(PriceHistory history) {
+            return new PriceHistoryResult(history, null);
+        }
+
+        public static PriceHistoryResult error(String message) {
+            return new PriceHistoryResult(null, message);
+        }
+
+        public boolean isSuccess() {
+            return history != null;
+        }
+    }
+
+    public record PriceHistory(String itemName, List<HistoryDay> history) {
+    }
+
+    public record HistoryDay(String date, double lowestPrice, int stock, int shops) {
+    }
 }
