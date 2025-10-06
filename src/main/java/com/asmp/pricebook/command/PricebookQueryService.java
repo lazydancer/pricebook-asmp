@@ -79,29 +79,18 @@ public final class PricebookQueryService {
     }
 
     private ItemLookupResult parseResponse(HttpResponse<String> response) {
-        if (response == null) {
+        String body = validateResponse(response);
+        if (body == null) {
             return ItemLookupResult.error("No response from pricebook service.");
         }
 
-        int status = response.statusCode();
-        if (status < 200 || status >= 300) {
-            return ItemLookupResult.error("Pricebook service returned status " + status + ".");
-        }
-
-        String body = response.body();
-        if (body == null || body.isBlank()) {
-            return ItemLookupResult.error("Pricebook service returned empty body.");
-        }
-
         try {
-            JsonElement parsed = JsonParser.parseString(body);
-            if (!parsed.isJsonObject()) {
+            JsonObject root = parseJsonObject(body);
+            if (root == null) {
                 return ItemLookupResult.error("Malformed pricebook payload.");
             }
 
-            JsonObject root = parsed.getAsJsonObject();
-            boolean ok = root.has("ok") && root.get("ok").getAsBoolean();
-            if (!ok) {
+            if (!isOkResponse(root)) {
                 return ItemLookupResult.error("Item not found. No buyers or sellers yet.");
             }
 
@@ -225,29 +214,15 @@ public final class PricebookQueryService {
     }
 
     private List<String> parseCatalog(HttpResponse<String> response) {
-        if (response == null) {
-            return Collections.emptyList();
-        }
-
-        int status = response.statusCode();
-        if (status < 200 || status >= 300) {
-            return Collections.emptyList();
-        }
-
-        String body = response.body();
-        if (body == null || body.isBlank()) {
+        String body = validateResponse(response);
+        if (body == null) {
             return Collections.emptyList();
         }
 
         List<String> result = new ArrayList<>();
         try {
-            JsonElement parsed = JsonParser.parseString(body);
-            if (!parsed.isJsonObject()) {
-                return Collections.emptyList();
-            }
-
-            JsonObject obj = parsed.getAsJsonObject();
-            if (!obj.has("ok") || !obj.get("ok").getAsBoolean()) {
+            JsonObject obj = parseJsonObject(body);
+            if (obj == null || !isOkResponse(obj)) {
                 return Collections.emptyList();
             }
 
@@ -290,6 +265,37 @@ public final class PricebookQueryService {
         } catch (RuntimeException ignored) {
             return Instant.EPOCH;
         }
+    }
+
+    private String validateResponse(HttpResponse<String> response) {
+        if (response == null) {
+            return null;
+        }
+        int status = response.statusCode();
+        if (status < 200 || status >= 300) {
+            return null;
+        }
+        String body = response.body();
+        if (body == null || body.isBlank()) {
+            return null;
+        }
+        return body;
+    }
+
+    private JsonObject parseJsonObject(String json) {
+        try {
+            JsonElement parsed = JsonParser.parseString(json);
+            if (!parsed.isJsonObject()) {
+                return null;
+            }
+            return parsed.getAsJsonObject();
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
+    private boolean isOkResponse(JsonObject obj) {
+        return obj != null && obj.has("ok") && obj.get("ok").getAsBoolean();
     }
 
     public record ItemLookupResult(ItemInfo info, String error) {
@@ -341,29 +347,18 @@ public final class PricebookQueryService {
     }
 
     private PriceHistoryResult parseHistoryResponse(HttpResponse<String> response) {
-        if (response == null) {
+        String body = validateResponse(response);
+        if (body == null) {
             return PriceHistoryResult.error("No response from pricebook service.");
         }
 
-        int status = response.statusCode();
-        if (status < 200 || status >= 300) {
-            return PriceHistoryResult.error("Pricebook service returned status " + status + ".");
-        }
-
-        String body = response.body();
-        if (body == null || body.isBlank()) {
-            return PriceHistoryResult.error("Pricebook service returned empty body.");
-        }
-
         try {
-            JsonElement parsed = JsonParser.parseString(body);
-            if (!parsed.isJsonObject()) {
+            JsonObject root = parseJsonObject(body);
+            if (root == null) {
                 return PriceHistoryResult.error("Malformed pricebook payload.");
             }
 
-            JsonObject root = parsed.getAsJsonObject();
-            boolean ok = root.has("ok") && root.get("ok").getAsBoolean();
-            if (!ok) {
+            if (!isOkResponse(root)) {
                 return PriceHistoryResult.error("No history data available.");
             }
 
