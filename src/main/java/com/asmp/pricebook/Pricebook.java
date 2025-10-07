@@ -47,8 +47,16 @@ public final class Pricebook implements ClientModInitializer {
         refreshSession();
     }
 
+    public static ModConfig config() {
+        return CONFIG;
+    }
+
+    public static void onConfigUpdated() {
+        runOnClient(Pricebook::refreshSession);
+    }
+
     public static boolean isEnabled() {
-        return session != null;
+        return CONFIG.enabled && session != null;
     }
 
     public static ShopScanner scanner() {
@@ -64,7 +72,7 @@ public final class Pricebook implements ClientModInitializer {
     }
 
     private static void refreshSession() {
-        if (!shouldEnableForCurrentServer()) {
+        if (!CONFIG.enabled || !shouldEnableForCurrentServer()) {
             endSession();
             return;
         }

@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.2.2] - 2025-10-06
+
+### Added
+- Mod Menu settings screen with an enable/disable toggle for Pricebook.
+
+### Changed
+- Configuration now persists an `enabled` flag and refreshes the session when it changes.
+- `/pb` without arguments now prefers the item on the shop sign you're targeting before falling back to the held item.
+
+## [1.2.1] - 2025-10-05
+
+### Changed
+- Refactor: Separate PricebookRenderer from PricebookCommand
+
 ## [1.2.0] - 2025-10-04
 
 ### Added

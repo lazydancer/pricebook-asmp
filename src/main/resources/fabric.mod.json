@@ -16,6 +16,9 @@
 	"entrypoints": {
 		"client": [
 			"com.asmp.pricebook.Pricebook"
+		],
+		"modmenu": [
+			"com.asmp.pricebook.config.PricebookModMenuIntegration"
 		]
 	},
 	"mixins": [

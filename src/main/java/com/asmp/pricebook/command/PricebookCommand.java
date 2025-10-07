@@ -2,6 +2,7 @@ package com.asmp.pricebook.command;
 
 import com.asmp.pricebook.Pricebook;
 import com.asmp.pricebook.command.PricebookQueryService.ItemLookupResult;
+import com.asmp.pricebook.scanner.ShopScanner;
 import com.asmp.pricebook.util.Dimensions;
 import com.asmp.pricebook.waypoint.WaypointManager;
 import com.mojang.brigadier.CommandDispatcher;
@@ -21,6 +22,8 @@ import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.hit.HitResult;
 
 import java.util.List;
 import java.util.Locale;
@@ -95,7 +98,7 @@ public final class PricebookCommand {
             return 1;
         }
 
-        String resolved = resolveItemName(player, itemName);
+        String resolved = resolveItemName(client, player, itemName);
         if (resolved == null || resolved.isBlank()) {
             player.sendMessage(prefixed("Hold an item or specify a name.", Formatting.RED), false);
             return 1;
@@ -141,9 +144,14 @@ public final class PricebookCommand {
         return 1;
     }
 
-    private static String resolveItemName(ClientPlayerEntity player, String itemArgument) {
+    private static String resolveItemName(MinecraftClient client, ClientPlayerEntity player, String itemArgument) {
         if (itemArgument != null && !itemArgument.isBlank()) {
             return itemArgument.trim();
+        }
+
+        String signItem = resolveSignItem(client);
+        if (signItem != null && !signItem.isBlank()) {
+            return signItem;
         }
 
         ItemStack stack = player.getMainHandStack();
@@ -156,6 +164,26 @@ public final class PricebookCommand {
 
         String display = stack.getName().getString();
         return display == null ? null : display.trim();
+    }
+
+    private static String resolveSignItem(MinecraftClient client) {
+        if (client == null || client.world == null) {
+            return null;
+        }
+        HitResult target = client.crosshairTarget;
+        if (!(target instanceof BlockHitResult blockHit)) {
+            return null;
+        }
+
+        ShopScanner scanner = Pricebook.scanner();
+        if (scanner == null) {
+            return null;
+        }
+
+        return scanner.resolveItemFromSign(client.world, blockHit.getBlockPos())
+                .map(String::trim)
+                .filter(text -> !text.isEmpty())
+                .orElse(null);
     }
 
     private static CompletableFuture<Suggestions> suggestItems(CommandContext<FabricClientCommandSource> context,

@@ -112,6 +112,10 @@ public final class ShopScanner {
         lastKnownChunks.clear();
     }
 
+    public Optional<String> resolveItemFromSign(ClientWorld world, BlockPos pos) {
+        return parseShop(world, pos).map(ShopSignParser.ShopEntry::item);
+    }
+
     private Set<ShopSignParser.ShopEntry> collectShops(ClientWorld world, WorldChunk chunk) {
         Set<ShopSignParser.ShopEntry> entries = new HashSet<>();
         chunk.getBlockEntityPositions().forEach((BlockPos pos) -> {
