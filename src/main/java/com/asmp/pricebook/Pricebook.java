@@ -10,11 +10,15 @@ import com.asmp.pricebook.util.Loggers;
 import com.asmp.pricebook.util.ModVersionChecker;
 import com.asmp.pricebook.waypoint.WaypointManager;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ServerInfo;
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.client.option.KeyBinding;
+import net.minecraft.client.util.InputUtil;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
@@ -30,6 +34,7 @@ public final class Pricebook implements ClientModInitializer {
     private static Session session;
     private static boolean outdatedNotified;
     private static String requiredVersion = "";
+    private static KeyBinding lookupKeyBinding;
 
     @Override
     public void onInitializeClient() {
@@ -37,6 +42,7 @@ public final class Pricebook implements ClientModInitializer {
         WaypointManager.initClient();
         WAYSTONE_SCANNER.registerListeners();
         PricebookCommand.register();
+        registerKeyBindings();
 
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> endSession());
 
@@ -175,6 +181,24 @@ public final class Pricebook implements ClientModInitializer {
         }
 
         return normalized.startsWith("asmp.cc:");
+    }
+
+    private static void registerKeyBindings() {
+        lookupKeyBinding = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.pricebook-asmp.lookup",
+                InputUtil.Type.KEYSYM,
+                InputUtil.UNKNOWN_KEY.getCode(),
+                "category.pricebook-asmp"
+        ));
+
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            if (lookupKeyBinding == null) {
+                return;
+            }
+            while (lookupKeyBinding.wasPressed()) {
+                PricebookCommand.triggerLookupKeybind();
+            }
+        });
     }
 
     private static String currentVersion() {

@@ -44,6 +44,18 @@ public final class PricebookCommand {
         });
     }
 
+    public static void triggerLookupKeybind() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null) {
+            return;
+        }
+        ClientPlayerEntity player = client.player;
+        if (player == null) {
+            return;
+        }
+        executeLookup(client, player, null);
+    }
+
     private static void registerPricebookCommand(CommandDispatcher<FabricClientCommandSource> dispatcher, String alias) {
         dispatcher.register(ClientCommandManager.literal(alias)
                 .executes(ctx -> execute(ctx.getSource(), null))
@@ -85,6 +97,10 @@ public final class PricebookCommand {
             return 0;
         }
 
+        return executeLookup(client, player, itemName);
+    }
+
+    private static int executeLookup(MinecraftClient client, ClientPlayerEntity player, String itemName) {
         WaypointManager.clear(); // Always clear the waypoint when running command
 
         if (!Pricebook.isEnabled()) {

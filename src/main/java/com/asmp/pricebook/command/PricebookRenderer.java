@@ -19,6 +19,10 @@ import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -27,11 +31,13 @@ public final class PricebookRenderer {
     private static final int MAX_LISTINGS_DISPLAYED = 3;
     private static final int STALENESS_THRESHOLD_MINUTES = 60 * 24;
     private static final String WAYPOINT_COMMAND_NAME = "pricebook_waypoint";
+    private static final double PRICE_DELTA_EPSILON = 0.0001;
 
     private static final DecimalFormat NUMBER_FORMAT = new DecimalFormat("#,##0",
             DecimalFormatSymbols.getInstance(Locale.ROOT));
     private static final Text PREFIX = Text.literal("[Pricebook]").formatted(Formatting.AQUA);
     private static final Text SEPARATOR = Text.literal(" · ").formatted(Formatting.DARK_GRAY);
+    private static final DateTimeFormatter HISTORY_DISPLAY_FORMAT = DateTimeFormatter.ofPattern("MM-dd", Locale.ROOT);
 
     static {
         NUMBER_FORMAT.setGroupingUsed(true);
@@ -82,7 +88,9 @@ public final class PricebookRenderer {
 
         DecimalFormat priceFormatter = createPriceFormatter(sellers, buyers);
 
-        sendList(player, "Sellers", sellers, priceFormatter);
+        if (!noSellers) {
+            sendList(player, null, sellers, priceFormatter);
+        }
 
         if (!noBuyers) {
             sendList(player, "Buyers", buyers, priceFormatter);
@@ -133,43 +141,217 @@ public final class PricebookRenderer {
             return;
         }
 
-        DecimalFormat priceFormatter = createPriceFormatterForHistory(historyDays);
+        List<PricebookQueryService.HistoryDay> sanitizedDays = sanitizeHistoryDays(historyDays);
+        if (sanitizedDays.isEmpty()) {
+            player.sendMessage(Text.literal("No price history available.").formatted(Formatting.GRAY), false);
+            return;
+        }
 
-        for (PricebookQueryService.HistoryDay day : historyDays) {
-            double price = day.lowestPrice();
+        DecimalFormat priceFormatter = createPriceFormatterForHistory(sanitizedDays);
+        HistoryInsights insights = analyzeHistory(sanitizedDays);
+        if (insights == null) {
+            player.sendMessage(Text.literal("No price history available.").formatted(Formatting.GRAY), false);
+            return;
+        }
 
-            // Skip rows where price is null/invalid
-            if (price <= 0) {
-                sendSpacerLine(player);
-                continue;
-            }
-
-            String dateStr = day.date();
-            if (dateStr != null && dateStr.length() >= 10) {
-                dateStr = dateStr.substring(5);
-            }
-            int stock = day.stock();
-            int shops = day.shops();
-
-            MutableText row = linePrefix()
-                    .append(Text.literal(dateStr).formatted(Formatting.GRAY))
-                    .append(separator())
-                    .append(Text.literal("☆").formatted(Formatting.GRAY))
-                    .append(Text.literal(priceFormatter.format(price)).formatted(Formatting.AQUA))
-                    .append(separator())
-                    .append(Text.literal(NUMBER_FORMAT.format(stock)).formatted(Formatting.AQUA))
-                    .append(Text.literal("x").formatted(Formatting.GRAY))
-                    .append(separator())
-                    .append(Text.literal(shops + " shops").formatted(Formatting.GRAY));
+        List<PricebookQueryService.HistoryDay> orderedDays = insights.days();
+        int size = orderedDays.size();
+        for (int i = 0; i < size; i++) {
+            PricebookQueryService.HistoryDay day = orderedDays.get(i);
+            PricebookQueryService.HistoryDay previous = (i + 1) < size ? orderedDays.get(i + 1) : null;
+            boolean isLatest = i == 0;
+            MutableText row = buildHistoryRow(day, previous, priceFormatter, insights, isLatest);
             player.sendMessage(row, false);
         }
     }
 
-    private static void sendSpacerLine(ClientPlayerEntity player) {
-        if (player == null) {
-            return;
+    private static List<PricebookQueryService.HistoryDay> sanitizeHistoryDays(List<PricebookQueryService.HistoryDay> historyDays) {
+        List<PricebookQueryService.HistoryDay> filtered = new ArrayList<>();
+        if (historyDays == null) {
+            return filtered;
         }
-        player.sendMessage(linePrefix(), false);
+
+        for (PricebookQueryService.HistoryDay day : historyDays) {
+            if (day == null) {
+                continue;
+            }
+            double price = day.lowestPrice();
+            if (Double.isNaN(price) || price <= 0) {
+                continue;
+            }
+            filtered.add(day);
+        }
+
+        filtered.sort((first, second) -> compareHistoryDates(second, first));
+        return filtered;
+    }
+
+    private static HistoryInsights analyzeHistory(List<PricebookQueryService.HistoryDay> days) {
+        if (days == null || days.isEmpty()) {
+            return null;
+        }
+
+        double minPrice = Double.POSITIVE_INFINITY;
+        double maxPrice = Double.NEGATIVE_INFINITY;
+        PricebookQueryService.HistoryDay minDay = null;
+        PricebookQueryService.HistoryDay maxDay = null;
+
+        for (PricebookQueryService.HistoryDay day : days) {
+            double price = day.lowestPrice();
+
+            if (price < minPrice) {
+                minPrice = price;
+                minDay = day;
+            }
+
+            if (price > maxPrice) {
+                maxPrice = price;
+                maxDay = day;
+            }
+        }
+
+        boolean hasRange = minDay != null && maxDay != null && Math.abs(maxPrice - minPrice) >= PRICE_DELTA_EPSILON;
+        return new HistoryInsights(days,
+                hasRange ? minDay : null,
+                hasRange ? maxDay : null);
+    }
+
+    private static MutableText buildHistoryRow(PricebookQueryService.HistoryDay day,
+                                               PricebookQueryService.HistoryDay previous,
+                                               DecimalFormat priceFormatter,
+                                               HistoryInsights insights,
+                                               boolean isLatest) {
+        String label = isLatest ? "Latest" : formatHistoryDate(day.date());
+        MutableText row = linePrefix()
+                .append(Text.literal(label).formatted(Formatting.GRAY))
+                .append(Text.literal(" ▸ ").formatted(Formatting.DARK_GRAY))
+                .append(Text.literal("☆").formatted(Formatting.GRAY));
+
+        Formatting priceColor = Formatting.AQUA;
+        if (insights.highest() != null && insights.highest().equals(day)) {
+            priceColor = Formatting.GOLD;
+        } else if (insights.lowest() != null && insights.lowest().equals(day)) {
+            priceColor = Formatting.GREEN;
+        }
+
+        row.append(Text.literal(priceFormatter.format(day.lowestPrice())).formatted(priceColor));
+
+        if (previous != null) {
+            row.append(buildPriceDeltaText(day.lowestPrice() - previous.lowestPrice()));
+        } else {
+            row.append(buildPriceDeltaPlaceholder());
+        }
+
+        row.append(separator())
+                .append(Text.literal(NUMBER_FORMAT.format(Math.max(0, day.stock()))).formatted(Formatting.AQUA))
+                .append(Text.literal("x").formatted(Formatting.GRAY));
+        if (previous != null) {
+            row.append(buildCountDeltaText(day.stock() - previous.stock()));
+        } else {
+            row.append(buildCountDeltaPlaceholder());
+        }
+
+        row.append(separator())
+                .append(Text.literal(day.shops() + (day.shops() == 1 ? " shop" : " shops")).formatted(Formatting.GRAY));
+        if (previous != null) {
+            row.append(buildCountDeltaText(day.shops() - previous.shops()));
+        } else {
+            row.append(buildCountDeltaPlaceholder());
+        }
+
+        if (insights.highest() != null && insights.highest().equals(day)) {
+            row.append(separator()).append(Text.literal("High").formatted(Formatting.GOLD));
+        } else if (insights.lowest() != null && insights.lowest().equals(day)) {
+            row.append(separator()).append(Text.literal("Low").formatted(Formatting.GREEN));
+        }
+
+        return row;
+    }
+
+    private static MutableText buildPriceDeltaText(double delta) {
+        double magnitude = Math.abs(delta);
+        if (magnitude < PRICE_DELTA_EPSILON) {
+            return Text.literal(" ↔").formatted(Formatting.DARK_GRAY);
+        }
+
+        boolean isIncrease = delta > 0;
+        Formatting color = isIncrease ? Formatting.GREEN : Formatting.RED;
+        String arrow = isIncrease ? "▲" : "▼";
+        return Text.literal(" " + arrow).formatted(color);
+    }
+
+    private static MutableText buildPriceDeltaPlaceholder() {
+        return Text.literal("  ").formatted(Formatting.DARK_GRAY);
+    }
+
+    private static MutableText buildCountDeltaText(int delta) {
+        if (delta == 0) {
+            return Text.literal(" (→)").formatted(Formatting.DARK_GRAY);
+        }
+
+        boolean isIncrease = delta > 0;
+        Formatting color = isIncrease ? Formatting.GREEN : Formatting.RED;
+        String arrow = isIncrease ? "↑" : "↓";
+        return Text.literal(" (" + arrow + ")").formatted(color);
+    }
+
+    private static MutableText buildCountDeltaPlaceholder() {
+        return Text.literal(" ( )").formatted(Formatting.DARK_GRAY);
+    }
+
+    private static String formatHistoryDate(String raw) {
+        LocalDate parsed = parseHistoryDate(raw);
+        if (parsed != null) {
+            return HISTORY_DISPLAY_FORMAT.format(parsed);
+        }
+
+        if (raw == null || raw.isBlank()) {
+            return "??";
+        }
+
+        if (raw.length() >= 5) {
+            return raw.substring(raw.length() - 5);
+        }
+        return raw;
+    }
+
+    private static LocalDate parseHistoryDate(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+
+        try {
+            return LocalDate.parse(raw, DateTimeFormatter.ISO_LOCAL_DATE);
+        } catch (DateTimeParseException ignored) {
+        }
+
+        try {
+            return LocalDate.parse(raw);
+        } catch (DateTimeParseException ignored) {
+        }
+
+        return null;
+    }
+
+    private static int compareHistoryDates(PricebookQueryService.HistoryDay first,
+                                           PricebookQueryService.HistoryDay second) {
+        LocalDate firstDate = parseHistoryDate(first.date());
+        LocalDate secondDate = parseHistoryDate(second.date());
+
+        if (firstDate != null && secondDate != null) {
+            return firstDate.compareTo(secondDate);
+        }
+
+        String firstRaw = first.date() == null ? "" : first.date();
+        String secondRaw = second.date() == null ? "" : second.date();
+        return firstRaw.compareTo(secondRaw);
+    }
+
+    private record HistoryInsights(
+            List<PricebookQueryService.HistoryDay> days,
+            PricebookQueryService.HistoryDay lowest,
+            PricebookQueryService.HistoryDay highest
+    ) {
     }
 
     private static void sendList(ClientPlayerEntity player, String title, List<Listing> entries, DecimalFormat priceFormatter) {
@@ -177,9 +359,11 @@ public final class PricebookRenderer {
             return;
         }
 
-        MutableText titleText = linePrefix()
-                .append(Text.literal(title).formatted(Formatting.GRAY, Formatting.UNDERLINE));
-        player.sendMessage(titleText, false);
+        if (title != null && !title.isBlank()) {
+            MutableText titleText = linePrefix()
+                    .append(Text.literal(title).formatted(Formatting.GRAY, Formatting.UNDERLINE));
+            player.sendMessage(titleText, false);
+        }
 
         String playerDimension = Dimensions.canonical(player.getWorld());
         Instant now = Instant.now();

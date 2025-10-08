@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.3] - 2025-10-07
+
+### Added
+- Optional (unbound) keybind for quick `/pb` lookups, configurable in the Controls menu.
+
+### Changed
+- History panel now highlights latest entry inline, shows directional arrows without numeric deltas, and better aligns rows.
+- History highs and lows only appear when prices actually vary.
+
 ## [1.2.2] - 2025-10-06
 
 ### Added
