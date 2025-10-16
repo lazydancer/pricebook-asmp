@@ -3,8 +3,8 @@ package com.asmp.pricebook.command;
 import com.asmp.pricebook.command.PricebookQueryService.ItemInfo;
 import com.asmp.pricebook.command.PricebookQueryService.ItemLookupResult;
 import com.asmp.pricebook.command.PricebookQueryService.Listing;
-import com.asmp.pricebook.command.PricebookQueryService.PriceHistoryResult;
 import com.asmp.pricebook.command.PricebookQueryService.WaystoneReference;
+import com.asmp.pricebook.command.PricebookQueryService.PriceHistoryResult;
 import com.asmp.pricebook.util.Dimensions;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
@@ -23,27 +23,47 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 
 public final class PricebookRenderer {
-    private static final int MAX_LISTINGS_DISPLAYED = 3;
-    private static final int STALENESS_THRESHOLD_MINUTES = 60 * 24;
-    private static final String WAYPOINT_COMMAND_NAME = "pricebook_waypoint";
+    static final int MAX_LISTINGS_DISPLAYED = 3;
+    static final int STALENESS_THRESHOLD_MINUTES = 60 * 24;
+    static final String WAYPOINT_COMMAND_NAME = "pricebook_waypoint";
     private static final double PRICE_DELTA_EPSILON = 0.0001;
 
-    private static final DecimalFormat NUMBER_FORMAT = new DecimalFormat("#,##0",
+    static final DecimalFormat NUMBER_FORMAT = new DecimalFormat("#,##0",
             DecimalFormatSymbols.getInstance(Locale.ROOT));
     private static final Text PREFIX = Text.literal("[Pricebook]").formatted(Formatting.AQUA);
     private static final Text SEPARATOR = Text.literal(" · ").formatted(Formatting.DARK_GRAY);
     private static final DateTimeFormatter HISTORY_DISPLAY_FORMAT = DateTimeFormatter.ofPattern("MM-dd", Locale.ROOT);
+    static final String CONTENT_INDENT = "  ";
+    static final int MAX_OWNER_DISPLAY_LENGTH = 18;
+    private static final String[] SPACE_GLYPHS = {
+            " ",
+            "\u2000", "\u2001", "\u2002", "\u2003", "\u2004", "\u2005", "\u2006", "\u2007", "\u2008", "\u2009", "\u200A",
+            "\u202F"
+    };
+    @FunctionalInterface
+    interface WidthProvider {
+        int width(Text text);
+    }
 
     static {
         NUMBER_FORMAT.setGroupingUsed(true);
     }
 
     private PricebookRenderer() {
+    }
+
+    static WidthProvider createWidthProvider() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.textRenderer == null) {
+            return text -> text.getString().length() * 6;
+        }
+        return client.textRenderer::getWidth;
     }
 
     public static void deliverResult(ClientPlayerEntity playerRef, ItemLookupResult result) {
@@ -71,7 +91,7 @@ public final class PricebookRenderer {
 
         String itemName = toTitleCase(info.itemName() == null || info.itemName().isBlank() ? "Unknown item" : info.itemName());
 
-        MutableText header = Text.literal("┌ Pricebook ▸ ").formatted(Formatting.AQUA)
+        MutableText header = Text.literal("┌─ Pricebook ─ ").formatted(Formatting.AQUA)
                 .append(Text.literal(itemName).formatted(Formatting.AQUA));
         player.sendMessage(header, false);
 
@@ -88,22 +108,75 @@ public final class PricebookRenderer {
 
         DecimalFormat priceFormatter = createPriceFormatter(sellers, buyers);
 
-        if (!noSellers) {
-            sendList(player, null, sellers, priceFormatter);
+        List<MutableText> tableLines = ListingTableFormatter.build(player, sellers, buyers, priceFormatter);
+        for (MutableText line : tableLines) {
+            player.sendMessage(line, false);
         }
 
-        if (!noBuyers) {
-            sendList(player, "Buyers", buyers, priceFormatter);
-        }
-
-        MutableText historyLink = linePrefix()
-                .append(Text.literal("[View Price History]")
+        MutableText historyLink = Text.literal("└─ ").formatted(Formatting.AQUA)
+                .append(Text.literal("[Price History]")
                         .formatted(Formatting.GRAY)
                         .styled(style -> style
                                 .withClickEvent(new ClickEvent.RunCommand("/pricebook_history " + info.itemName()))
                                 .withHoverEvent(new HoverEvent.ShowText(
                                         Text.literal("Click to view price history")))));
         player.sendMessage(historyLink, false);
+    }
+
+    public static void sendTestLayout(ClientPlayerEntity playerRef) {
+        ClientPlayerEntity player = validatePlayer(playerRef);
+        if (player == null) {
+            return;
+        }
+
+        Instant now = Instant.now();
+
+        List<Listing> sellers = List.of(
+                new Listing("Wrathic", 2000.0, 1,
+                        new BlockPos(-197, 69, 40),
+                        Dimensions.OVERWORLD,
+                        now.minus(Duration.ofMinutes(12)),
+                        new WaystoneReference("Farmers Market", new BlockPos(-190, 68, 42), 72)),
+                new Listing("Styxah", 3750.0, 43,
+                        new BlockPos(30, 70, 30),
+                        Dimensions.OVERWORLD,
+                        now.minus(Duration.ofHours(2)),
+                        new WaystoneReference("The Glorious Democratic People's Republic Of Rddubstan", new BlockPos(32, 70, 30), 18)),
+                new Listing("burntbustybread", 3950.0, 14,
+                        new BlockPos(-35, 88, -213),
+                        Dimensions.NETHER,
+                        now.minus(Duration.ofDays(3)),
+                        new WaystoneReference("On God I'm going back", new BlockPos(-30, 88, -210), 40))
+        );
+
+        List<Listing> buyers = List.of(
+                new Listing("ProbablyNotJacob", 3800.0, 1728,
+                        new BlockPos(128, 72, -512),
+                        Dimensions.OVERWORLD,
+                        now.minus(Duration.ofMinutes(5)),
+                        new WaystoneReference("Amethyst Village", new BlockPos(132, 72, -508), 28)),
+                new Listing("Styxah", 3500.0, 11,
+                        new BlockPos(-210, 68, 44),
+                        Dimensions.OVERWORLD,
+                        now.minus(Duration.ofHours(4)),
+                        new WaystoneReference("Farmers Market", new BlockPos(-190, 68, 42), 72)),
+                new Listing("burntbustybread", 3250.0, 61,
+                        new BlockPos(96, 64, -1024),
+                        Dimensions.END,
+                        now.minus(Duration.ofHours(30)),
+                        new WaystoneReference("On God I'm going back", new BlockPos(100, 64, -1020), 36))
+        );
+
+        MutableText header = Text.literal("┌─ Pricebook Test ─ Sample Layout").formatted(Formatting.AQUA);
+        player.sendMessage(header, false);
+
+        DecimalFormat priceFormatter = createPriceFormatter(sellers, buyers);
+        for (MutableText line : ListingTableFormatter.build(player, sellers, buyers, priceFormatter)) {
+            player.sendMessage(line, false);
+        }
+
+        MutableText footer = Text.literal("└─ End Test Layout").formatted(Formatting.AQUA);
+        player.sendMessage(footer, false);
     }
 
     public static void deliverHistoryResult(ClientPlayerEntity playerRef, PriceHistoryResult result) {
@@ -131,7 +204,7 @@ public final class PricebookRenderer {
 
         String itemName = toTitleCase(history.itemName() == null || history.itemName().isBlank() ? "Unknown item" : history.itemName());
 
-        MutableText header = Text.literal("┌ Pricebook History ▸ ").formatted(Formatting.AQUA)
+        MutableText header = Text.literal("┌─ Pricebook History ─ ").formatted(Formatting.AQUA)
                 .append(Text.literal(itemName).formatted(Formatting.AQUA));
         player.sendMessage(header, false);
 
@@ -156,11 +229,29 @@ public final class PricebookRenderer {
 
         List<PricebookQueryService.HistoryDay> orderedDays = insights.days();
         int size = orderedDays.size();
+        WidthProvider widthProvider = createWidthProvider();
+        int labelWidth = 0;
+        int priceWidth = 0;
+        int stockWidth = 0;
+        int shopsWidth = 0;
+        for (int i = 0; i < size; i++) {
+            PricebookQueryService.HistoryDay day = orderedDays.get(i);
+            String label = (i == 0) ? "Latest" : formatHistoryDate(day.date());
+            labelWidth = Math.max(labelWidth, measureWidth(widthProvider, Text.literal(label).formatted(Formatting.GRAY)));
+            String priceStr = priceFormatter.format(day.lowestPrice());
+            priceWidth = Math.max(priceWidth, measureWidth(widthProvider, Text.literal(priceStr).formatted(Formatting.AQUA)));
+            String stockStr = NUMBER_FORMAT.format(Math.max(0, day.stock()));
+            stockWidth = Math.max(stockWidth, measureWidth(widthProvider, Text.literal(stockStr).formatted(Formatting.AQUA)));
+            String shopsStr = day.shops() + (day.shops() == 1 ? " shop" : " shops");
+            shopsWidth = Math.max(shopsWidth, measureWidth(widthProvider, Text.literal(shopsStr).formatted(Formatting.GRAY)));
+        }
+
         for (int i = 0; i < size; i++) {
             PricebookQueryService.HistoryDay day = orderedDays.get(i);
             PricebookQueryService.HistoryDay previous = (i + 1) < size ? orderedDays.get(i + 1) : null;
             boolean isLatest = i == 0;
-            MutableText row = buildHistoryRow(day, previous, priceFormatter, insights, isLatest);
+            MutableText row = buildHistoryRow(day, previous, priceFormatter, insights, isLatest,
+                    labelWidth, priceWidth, stockWidth, shopsWidth, widthProvider);
             player.sendMessage(row, false);
         }
     }
@@ -220,12 +311,15 @@ public final class PricebookRenderer {
                                                PricebookQueryService.HistoryDay previous,
                                                DecimalFormat priceFormatter,
                                                HistoryInsights insights,
-                                               boolean isLatest) {
+                                               boolean isLatest,
+                                               int labelWidth,
+                                               int priceWidth,
+                                               int stockWidth,
+                                               int shopsWidth,
+                                               WidthProvider widthProvider) {
         String label = isLatest ? "Latest" : formatHistoryDate(day.date());
-        MutableText row = linePrefix()
-                .append(Text.literal(label).formatted(Formatting.GRAY))
-                .append(Text.literal(" ▸ ").formatted(Formatting.DARK_GRAY))
-                .append(Text.literal("☆").formatted(Formatting.GRAY));
+        MutableText row = linePrefix().append(Text.literal(CONTENT_INDENT));
+        row.append(padRight(widthProvider, Text.literal(label).formatted(Formatting.GRAY), labelWidth));
 
         Formatting priceColor = Formatting.AQUA;
         if (insights.highest() != null && insights.highest().equals(day)) {
@@ -234,7 +328,8 @@ public final class PricebookRenderer {
             priceColor = Formatting.GREEN;
         }
 
-        row.append(Text.literal(priceFormatter.format(day.lowestPrice())).formatted(priceColor));
+        row.append(separator());
+        row.append(padLeft(widthProvider, Text.literal(priceFormatter.format(day.lowestPrice())).formatted(priceColor), priceWidth));
 
         if (previous != null) {
             row.append(buildPriceDeltaText(day.lowestPrice() - previous.lowestPrice()));
@@ -242,17 +337,20 @@ public final class PricebookRenderer {
             row.append(buildPriceDeltaPlaceholder());
         }
 
-        row.append(separator())
-                .append(Text.literal(NUMBER_FORMAT.format(Math.max(0, day.stock()))).formatted(Formatting.AQUA))
+        String stockStr = NUMBER_FORMAT.format(Math.max(0, day.stock()));
+        row.append(separator());
+        MutableText stockComponent = padLeft(widthProvider, Text.literal(stockStr).formatted(Formatting.AQUA), stockWidth)
                 .append(Text.literal("x").formatted(Formatting.GRAY));
+        row.append(stockComponent);
         if (previous != null) {
             row.append(buildCountDeltaText(day.stock() - previous.stock()));
         } else {
             row.append(buildCountDeltaPlaceholder());
         }
 
-        row.append(separator())
-                .append(Text.literal(day.shops() + (day.shops() == 1 ? " shop" : " shops")).formatted(Formatting.GRAY));
+        String shopsStr = day.shops() + (day.shops() == 1 ? " shop" : " shops");
+        row.append(separator());
+        row.append(padRight(widthProvider, Text.literal(shopsStr).formatted(Formatting.GRAY), shopsWidth));
         if (previous != null) {
             row.append(buildCountDeltaText(day.shops() - previous.shops()));
         } else {
@@ -271,12 +369,12 @@ public final class PricebookRenderer {
     private static MutableText buildPriceDeltaText(double delta) {
         double magnitude = Math.abs(delta);
         if (magnitude < PRICE_DELTA_EPSILON) {
-            return Text.literal(" ↔").formatted(Formatting.DARK_GRAY);
+            return Text.literal(" →").formatted(Formatting.DARK_GRAY);
         }
 
         boolean isIncrease = delta > 0;
         Formatting color = isIncrease ? Formatting.GREEN : Formatting.RED;
-        String arrow = isIncrease ? "▲" : "▼";
+        String arrow = isIncrease ? "↑" : "↓";
         return Text.literal(" " + arrow).formatted(color);
     }
 
@@ -286,17 +384,17 @@ public final class PricebookRenderer {
 
     private static MutableText buildCountDeltaText(int delta) {
         if (delta == 0) {
-            return Text.literal(" (→)").formatted(Formatting.DARK_GRAY);
+            return Text.literal(" →").formatted(Formatting.DARK_GRAY);
         }
 
         boolean isIncrease = delta > 0;
         Formatting color = isIncrease ? Formatting.GREEN : Formatting.RED;
         String arrow = isIncrease ? "↑" : "↓";
-        return Text.literal(" (" + arrow + ")").formatted(color);
+        return Text.literal(" " + arrow).formatted(color);
     }
 
     private static MutableText buildCountDeltaPlaceholder() {
-        return Text.literal(" ( )").formatted(Formatting.DARK_GRAY);
+        return Text.literal("  ").formatted(Formatting.DARK_GRAY);
     }
 
     private static String formatHistoryDate(String raw) {
@@ -354,31 +452,7 @@ public final class PricebookRenderer {
     ) {
     }
 
-    private static void sendList(ClientPlayerEntity player, String title, List<Listing> entries, DecimalFormat priceFormatter) {
-        if (entries == null || entries.isEmpty()) {
-            return;
-        }
-
-        if (title != null && !title.isBlank()) {
-            MutableText titleText = linePrefix()
-                    .append(Text.literal(title).formatted(Formatting.GRAY, Formatting.UNDERLINE));
-            player.sendMessage(titleText, false);
-        }
-
-        String playerDimension = Dimensions.canonical(player.getWorld());
-        Instant now = Instant.now();
-
-        int limit = Math.min(MAX_LISTINGS_DISPLAYED, entries.size());
-        for (int i = 0; i < limit; i++) {
-            Listing listing = entries.get(i);
-            MutableText line = formatListing(i + 1, listing, playerDimension, now, priceFormatter);
-            if (line != null) {
-                player.sendMessage(line, false);
-            }
-        }
-    }
-
-    private static DecimalFormat createPriceFormatter(List<Listing> sellers, List<Listing> buyers) {
+    static DecimalFormat createPriceFormatter(List<Listing> sellers, List<Listing> buyers) {
         boolean needsDecimals = anyPriceHasDecimals(sellers, buyers);
         return buildFormatter(needsDecimals);
     }
@@ -421,95 +495,126 @@ public final class PricebookRenderer {
         return formatter;
     }
 
-    private static MutableText formatListing(int index, Listing listing, String playerDimension, Instant now, DecimalFormat priceFormatter) {
-        if (listing == null) {
-            return null;
-        }
-
-        String owner = listing.owner() == null || listing.owner().isBlank() ? "Unknown" : listing.owner();
-        String priceStr = priceFormatter.format(listing.price());
-        int amount = Math.max(0, listing.amount());
-
-        MutableText line = linePrefix()
-                .append(Text.literal("☆").formatted(Formatting.GRAY))
-                .append(Text.literal(priceStr).formatted(Formatting.AQUA));
-
-        MutableText quantityPart = Text.literal(NUMBER_FORMAT.format(amount)).formatted(Formatting.AQUA)
-                .append(Text.literal("x").formatted(Formatting.GRAY));
-        line.append(separator());
-        line.append(quantityPart);
-
-        line.append(separator());
-        line.append(Text.literal(owner).formatted(Formatting.GRAY));
-
-        String dimension = Dimensions.canonical(listing.dimension());
-        String highlightDimension = dimension.isEmpty() ? playerDimension : dimension;
-
-        appendWaystoneLink(line, listing, highlightDimension, playerDimension);
-        appendCoordinateLink(line, listing, owner, highlightDimension);
-
-        if (!dimension.isEmpty() && !dimension.equals(playerDimension)) {
-            line.append(Text.literal(" (" + dimension + ")").formatted(Formatting.DARK_AQUA));
-        }
-
-        if (isStale(now, listing.lastSeenAt())) {
-            line.append(Text.literal(" Stale").formatted(Formatting.YELLOW));
-        }
-
-        return line;
-    }
-
-    private static void appendWaystoneLink(MutableText line, Listing listing,
-                                           String highlightDimension, String playerDimension) {
-        WaystoneReference waystone = listing.nearestWaystone();
-        if (waystone == null || waystone.position() == null) {
-            return;
-        }
-
-        BlockPos wsPos = waystone.position();
-        String wsName = waystone.name() == null || waystone.name().isBlank() ? "Waystone" : waystone.name();
-        String dimensionArg = highlightDimension.isEmpty() ? playerDimension : highlightDimension;
-        if (dimensionArg == null) {
-            dimensionArg = "";
-        }
-        String wsCommand = waypointCommand(wsPos, dimensionArg, wsName);
-
-        MutableText wsLink = Text.literal("[" + wsName + "]")
-                .formatted(Formatting.GRAY)
-                .styled(style -> style
-                        .withClickEvent(new ClickEvent.RunCommand(wsCommand))
-                        .withHoverEvent(new HoverEvent.ShowText(
-                                Text.literal("Click to create waypoint at " + wsName))));
-
-        line.append(separator());
-        line.append(wsLink);
-    }
-
-    private static void appendCoordinateLink(MutableText line, Listing listing, String owner,
-                                              String highlightDimension) {
-        BlockPos listingPos = listing.position();
-        if (listingPos == null) {
-            return;
-        }
-
-        String waypointName = String.format("%s's Shop", owner);
-        String command = waypointCommand(listingPos, highlightDimension, waypointName);
-        MutableText coordsLink = Text.literal("[" + formatCoordinates(listingPos) + "]")
-                .formatted(Formatting.GRAY)
-                .styled(style -> style
-                        .withClickEvent(new ClickEvent.RunCommand(command))
-                        .withHoverEvent(new HoverEvent.ShowText(
-                                Text.literal("Click to create waypoint at shop"))));
-        line.append(separator());
-        line.append(coordsLink);
-    }
-
-    private static MutableText separator() {
+    static MutableText separator() {
         return SEPARATOR.copy();
     }
 
-    private static MutableText linePrefix() {
+    static MutableText linePrefix() {
         return Text.literal("│ ").formatted(Formatting.AQUA);
+    }
+
+    static MutableText padLeft(WidthProvider widthProvider, Text text, int targetWidth) {
+        MutableText padded = Text.empty();
+        if (widthProvider == null) {
+            padded.append(Text.literal(" ".repeat(Math.max(0, (targetWidth / 4)))));
+            padded.append(text.copy());
+            return padded;
+        }
+
+        int width = measureWidth(widthProvider, text);
+        if (width >= targetWidth) {
+            padded.append(text.copy());
+            return padded;
+        }
+
+        padded.append(spacer(widthProvider, targetWidth - width));
+        padded.append(text.copy());
+        return padded;
+    }
+
+    static MutableText padRight(WidthProvider widthProvider, Text text, int targetWidth) {
+        MutableText padded = Text.empty();
+        padded.append(text.copy());
+        if (widthProvider == null) {
+            padded.append(Text.literal(" ".repeat(Math.max(0, (targetWidth / 4)))));
+            return padded;
+        }
+
+        int width = measureWidth(widthProvider, text);
+        if (width >= targetWidth) {
+            return padded;
+        }
+
+        padded.append(spacer(widthProvider, targetWidth - width));
+        return padded;
+    }
+
+    static MutableText spacer(WidthProvider widthProvider, int pixels) {
+        MutableText filler = Text.empty();
+        if (pixels <= 0) {
+            return filler;
+        }
+
+        if (widthProvider == null) {
+            int spaces = Math.max(1, (int) Math.ceil(pixels / 4.0));
+            filler.append(Text.literal(" ".repeat(spaces)));
+            return filler;
+        }
+
+        List<SpaceUnit> units = spaceUnits(widthProvider);
+        if (units.isEmpty()) {
+            int spaces = Math.max(1, (int) Math.ceil(pixels / 4.0));
+            filler.append(Text.literal(" ".repeat(spaces)));
+            return filler;
+        }
+
+        int generated = 0;
+        while (generated < pixels) {
+            int remaining = pixels - generated;
+            SpaceUnit unit = pickSpaceUnit(units, remaining);
+            filler.append(unit.text.copy());
+            generated += unit.width;
+        }
+
+        return filler;
+    }
+
+    static int measureWidth(WidthProvider widthProvider, Text text) {
+        if (widthProvider != null) {
+            return widthProvider.width(text);
+        }
+        return text.getString().length() * 6;
+    }
+
+    private static List<SpaceUnit> spaceUnits(WidthProvider widthProvider) {
+        if (widthProvider == null) {
+            return List.of();
+        }
+        List<SpaceUnit> units = new ArrayList<>();
+        for (String glyph : SPACE_GLYPHS) {
+            Text candidate = Text.literal(glyph);
+            int width = widthProvider.width(candidate);
+            if (width > 0) {
+                units.add(new SpaceUnit(candidate, width));
+            }
+        }
+        units.sort(Comparator.comparingInt(SpaceUnit::width).reversed());
+        return units;
+    }
+
+    private static SpaceUnit pickSpaceUnit(List<SpaceUnit> units, int remaining) {
+        for (SpaceUnit unit : units) {
+            if (unit.width <= remaining) {
+                return unit;
+            }
+        }
+        return units.get(units.size() - 1);
+    }
+
+    static String truncate(String value, int maxLength) {
+        if (value == null) {
+            return "";
+        }
+        if (value.length() <= maxLength) {
+            return value;
+        }
+        if (maxLength <= 3) {
+            return value.substring(0, maxLength);
+        }
+        return value.substring(0, maxLength - 3) + "...";
+    }
+
+    private record SpaceUnit(Text text, int width) {
     }
 
     private static ClientPlayerEntity validatePlayer(ClientPlayerEntity playerRef) {
@@ -519,37 +624,6 @@ public final class PricebookRenderer {
             return null;
         }
         return player;
-    }
-
-    private static String waypointCommand(BlockPos pos, String dimension, String label) {
-        String dimToken = (dimension == null || dimension.isBlank()) ? "_" : dimension;
-        return String.format(Locale.ROOT, "/%s %d %d %d %s %s",
-                WAYPOINT_COMMAND_NAME,
-                pos.getX(), pos.getY(), pos.getZ(),
-                dimToken,
-                sanitizeNameForCommand(label));
-    }
-
-    private static String formatCoordinates(BlockPos listingPos) {
-        if (listingPos == null) {
-            return "coords n/a";
-        }
-        return String.format(Locale.ROOT, "%d %d %d", listingPos.getX(), listingPos.getY(), listingPos.getZ());
-    }
-
-    private static String sanitizeNameForCommand(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return "Waystone";
-        }
-        return raw.replace('\n', ' ').replace('\r', ' ').trim();
-    }
-
-    private static boolean isStale(Instant now, Instant lastSeen) {
-        if (lastSeen == null || lastSeen.equals(Instant.EPOCH)) {
-            return true;
-        }
-        Duration age = Duration.between(lastSeen, now).abs();
-        return age.toMinutes() >= STALENESS_THRESHOLD_MINUTES;
     }
 
     private static String toTitleCase(String text) {

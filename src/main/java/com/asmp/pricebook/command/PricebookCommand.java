@@ -41,6 +41,7 @@ public final class PricebookCommand {
             registerPricebookCommand(dispatcher, "pb");
             registerHistoryCommand(dispatcher, "pricebook_history");
             registerWaypointCommand(dispatcher);
+            registerTestCommand(dispatcher);
         });
     }
 
@@ -84,6 +85,11 @@ public final class PricebookCommand {
                                                                 IntegerArgumentType.getInteger(ctx, "z"),
                                                                 StringArgumentType.getString(ctx, "dimension"),
                                                                 StringArgumentType.getString(ctx, "name")))))))));
+    }
+
+    private static void registerTestCommand(CommandDispatcher<FabricClientCommandSource> dispatcher) {
+        dispatcher.register(ClientCommandManager.literal("pb_test")
+                .executes(ctx -> executeTestLayout(ctx.getSource())));
     }
 
     private static int execute(FabricClientCommandSource source, String itemName) {
@@ -157,6 +163,16 @@ public final class PricebookCommand {
         CompletableFuture<PricebookQueryService.PriceHistoryResult> future = service.fetchHistory(trimmed);
         future.thenAccept(result -> client.execute(() -> PricebookRenderer.deliverHistoryResult(player, result)));
 
+        return 1;
+    }
+
+    private static int executeTestLayout(FabricClientCommandSource source) {
+        MinecraftClient client = source.getClient();
+        if (client == null || client.player == null) {
+            return 0;
+        }
+
+        client.execute(() -> PricebookRenderer.sendTestLayout(client.player));
         return 1;
     }
 
