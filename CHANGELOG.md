@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.4] - 2025-10-16
+
+### Changed
+- Seller/buyer tables now compute owner and waystone column widths up-front, trimming longest entries together to avoid chat wrapping.
+- Owner and waystone names show ellipsis with hover tooltips when truncated; waypoint links reuse the same column logic.
+
 ## [1.2.3] - 2025-10-07
 
 ### Added
